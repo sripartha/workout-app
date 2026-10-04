@@ -172,3 +172,10 @@ details{margin:10px 0}summary{color:var(--mut);cursor:pointer;padding:10px 0;fon
 .step.sm{flex:0 0 44px;height:44px;font-size:22px}
 .wdur{min-width:84px;text-align:center;font-size:20px}
 .card.wrapcard{margin-top:4px}
+
+/* base not set / machine caution */
+.linkbtn{background:none;border:0;padding:0;color:var(--acc2);font:inherit;text-decoration:underline;cursor:pointer}
+.mcard .mcaut{color:#f0b85a}
+.card.basewarn{border-color:#5a4a1a;background:#1f1a0e;font-size:14px}
+.baseline{text-align:center;margin:-2px 0 6px}
+.baseline .linkbtn{color:var(--mut);font-size:13px}

@@ -15,6 +15,7 @@ At the gym every action is a tap, chip or slider; typing is only for setup.
 | `sync/Code.gs` | Optional Google Apps Script web app for Google Sheet sync |
 | `SPEC.md` | Gherkin acceptance spec (scenario IDs used by the tests) |
 | `tests/e2e.js` | Playwright acceptance suite (iPhone viewport 390×844) |
+| `tests/seed.e2e.js` | Imports a seed backup (default `/workspace/catalog/liftlog-seed.json`) and checks the unset-base flow |
 | `tests/apps-script.test.js` | Runs `sync/Code.gs` against a fake Spreadsheet |
 | `screenshots/` | Screenshots from the test run |
 
@@ -63,6 +64,18 @@ Only these need hosting: `index.html app.js styles.css sw.js manifest.webmanifes
 9. **Setup**: units (lb/kg, step size), home gym, default reps, schedule, templates (add/remove/reorder exercises), exercises & machines
    (rename without losing history, add near-duplicates, base weight, gym, location, cues, **photo**, starting weight, delete),
    pinned cautions, sync, advice import, backup, re-run first-run setup.
+
+### Base weight not set yet (v2.2)
+A machine's base can be **not set** (machines imported from a catalog start that way, because a coach usually writes down
+plate weight only). Logging never waits for it: sets are saved as **added** weight with the base unknown, shown as
+"50 lb + base?" in history and as "added weight only" in charts (CSV leaves weight/base_weight blank). Set it any time, tap-only,
+from the small **Base: — (tap to set)** line on the exercise screen (chips 0–45, **Other…** row up to 200 lb, **Not sure / later**)
+or in the machine editor. When you set it, earlier sets on that machine get their totals filled in automatically. Changing it later
+only affects new sets.
+
+### Per-machine cautions
+Besides the exercise-level pinned caution, each machine can carry its own caution (machine editor › *Caution for this machine*).
+It shows in small print on the machine card and as a ⚠️ card when that machine is selected.
 
 ### Machine photos
 Machine editor (first-run setup, or Setup › Exercises › exercise › machine) › **📷 Take photo** (camera, `capture=environment`) or **🖼 Choose photo** (Photos).

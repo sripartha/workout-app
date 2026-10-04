@@ -11,7 +11,7 @@ create demo data through the first-run setup UI.
 v2 changes: difficulty 1-5 replaces RPE (F7, F17), Thoughts box (F18), last-machine card (F19),
 base weight (F20), gyms/locations/rename (F21), coaching cues (F22), locked in-set mode (F23),
 screen wake lock (F24), empty start + first-run setup (F25), backup reminder (F26).
-v2.1: end-of-workout wrap-up (F27).
+v2.1: end-of-workout wrap-up (F27). v2.2: unknown base weight + per-machine cautions (F28; tested by `tests/seed.e2e.js` with the catalog seed).
 
 ---
 
@@ -617,3 +617,48 @@ Feature: Workout wrap-up
 Apps Script checks for this feature (in `tests/apps-script.test.js`, part of S16.8): the Sessions tab is created with the
 columns above, upsert by session_id updates in place, deletes by session_id, a duplicate id in one request keeps the last,
 the columns equal the app's session CSV columns, and session-only posts leave the Log tab alone.
+
+## Feature 28: Base weight not set yet, and per-machine cautions (v2.2)
+
+Machines can have `base: null` ("not set"), e.g. machines imported from a catalog. The coach records plate (added) weight only,
+so the base is entered once per machine, whenever convenient — never required to log.
+
+```gherkin
+Feature: Unknown base weight
+  Scenario: SEED.2/3 Import keeps the base unset
+    When I import a backup whose machines have "base": null
+    Then those machines show "base not set" in Setup and the base is not turned into 0
+
+  Scenario: SEED.6 Never blocks logging
+    When I pick a machine without a base
+    Then no dialog opens; a gentle "Base weight not set" card (Set base / Later) and a small
+      "Base: — (tap to set)" line are shown, and the weight reads "50 lb + base?"
+
+  Scenario: SEED.7 Logging with an unknown base
+    When I log sets at 50 added
+    Then each set stores added 50 with base unknown (null); history shows "50 lb + base? × 12";
+      the chart says "added weight only"; CSV leaves weight and base_weight blank
+
+  Scenario: SEED.8 Tap-only base entry
+    When I tap "Base: — (tap to set)"
+    Then a sheet offers chips 0, 10, 15, 20, 25, 30, 35, 45 and "Other…" (a scrollable 0-200 lb row in 5 lb steps; kg: 0-90 in 2.5)
+    And "Not sure / later" closes it without changes (and hides the reminder card for now; the base line stays)
+
+  Scenario: SEED.9 Totals filled in retroactively
+    When I set the base to 45
+    Then every earlier set on that machine with an unknown base becomes 50 + 45 = 95 (history, chart, picker, Sheet re-sync)
+
+  Scenario: SEED.10 Never locked
+    When I later change the base to 35
+    Then new sets use 35 and sets that already had a base keep it
+
+  Scenario: SEED.11 Also editable in the machine editor
+    Then the editor shows "Not set" plus base chips; choosing one saves it (no starting weight is created)
+
+Feature: Per-machine cautions
+  Scenario: SEED.4/6/12 A caution belongs to one machine
+    Given "Hammer Strength Iso-Lateral Incline Press" has caution "Don't force the bottom position if the right shoulder feels pinchy"
+    Then its machine card shows the caution in small print
+    And when it is selected a "⚠️ Caution — <machine>" card shows at the top (Unpin removes it; editable in the machine editor)
+    And exercise-level pinned cautions (e.g. Biceps Curl) still show for every machine
+```

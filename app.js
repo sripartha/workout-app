@@ -1,7 +1,7 @@
 /* Lift Log — tap-only workout logger PWA. Plain JS, no build step, no dependencies. */
 'use strict';
 (function () {
-const APP_VERSION = '2.1.0';
+const APP_VERSION = '2.2.0';
 const LB_PER_KG = 2.20462;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -25,7 +25,7 @@ const WRAP_DIFF = { 1: 'Very easy', 2: 'Easy', 3: 'As expected', 4: 'Hard', 5: '
 const WRAP_ENERGY = { 1: 'Exhausted', 2: 'Low', 3: 'Normal', 4: 'Good', 5: 'Great' };
 const WRAP_CHIPS = ['great session', 'felt strong', 'PR today', 'tired', 'bad sleep', 'short on time', 'shoulder sore', 'skipped exercises'];
 const NOTE_CHIPS = ['form check', 'increase next time', 'decrease next time', 'pain / tweak', 'low energy', 'great pump'];
-const BASE_CHIPS_LB = [0, 10, 15, 20, 25, 35, 45], BASE_CHIPS_KG = [0, 5, 7.5, 10, 15, 20];
+const BASE_CHIPS_LB = [0, 10, 15, 20, 25, 30, 35, 45], BASE_CHIPS_KG = [0, 5, 7.5, 10, 12.5, 15, 20];
 // Suggestions shown as tap-to-add chips in first-run setup (nothing is pre-loaded).
 const SUGGEST = {
   push: ['Chest Press', 'Bench Press', 'Incline Press', 'Shoulder Press', 'Lateral Raise', 'Triceps Pushdown', 'Pec Deck', 'Dips'],
@@ -120,7 +120,7 @@ function migrate(s) {
   for (let i = 0; i < 7; i++) if (!s.schedule[i]) s.schedule[i] = { t: null, m: 'solo' };
   Object.values(s.exercises).forEach(e => {
     e.machines = e.machines || []; e.pinned = e.pinned || ''; e.cues = e.cues || '';
-    e.machines.forEach(m => { m.base = +m.base || 0; m.bu = m.bu || 'lb'; m.gym = m.gym || ''; m.loc = m.loc || ''; m.cues = m.cues || ''; });
+    e.machines.forEach(m => { m.base = (m.base === null || m.base === '') && e.kind !== 'cardio' ? null : +m.base || 0; m.caution = m.caution || ''; m.bu = m.bu || 'lb'; m.gym = m.gym || ''; m.loc = m.loc || ''; m.cues = m.cues || ''; });
   });
   s.sessions.forEach(x => {
     x.entries = x.entries || []; x.exIds = x.exIds || []; x.thoughts = x.thoughts || {};
@@ -128,6 +128,7 @@ function migrate(s) {
       if (e.diff == null && e.rpe != null) e.diff = rpeToDiff(e.rpe);
       delete e.rpe;
       if (e.kind === 'set' && e.add == null) { e.add = e.w; e.base = 0; }
+      if (e.kind === 'set' && e.base === undefined) e.base = 0;
     });
   });
   s.sync = Object.assign({ url: '', token: '', dirty: [], deleted: [], last: null, err: '', lastAttempt: null, sesHash: {} }, s.sync || {});
@@ -148,6 +149,19 @@ const step = () => unit() === 'kg' ? S.settings.stepKg : S.settings.stepLb;
 const conv = (w, from, to) => from === to ? w : (to === 'kg' ? w / LB_PER_KG : w * LB_PER_KG);
 const dispW = e => round1(conv(e.w, e.u || 'lb', unit()));           // total weight in display unit
 const baseOf = m => m ? round1(conv(+m.base || 0, m.bu || 'lb', unit())) : 0;
+// base === null means "not set yet" (e.g. imported machines: the coach records plate weight only). Math treats it as 0;
+// sets logged meanwhile keep base null and get their totals filled in once the base is entered (setMachineBase).
+const noBase = m => !!m && m.base === null;
+function setMachineBase(ex, m, b) {
+  const was = m.base; m.base = b; m.bu = unit();
+  if (was === null && b !== null) {
+    const ids = [];
+    S.sessions.forEach(s => s.entries.forEach(e => { if (e.exId === ex.id && e.mId === m.id && e.kind === 'set' && e.base === null) {
+      e.base = round1(conv(b, unit(), e.u || 'lb')); e.w = round1((e.add || 0) + e.base); ids.push(e.id); } }));
+    if (ids.length) markDirty(ids);
+  }
+  Object.keys(P).forEach(k => { if (P[k] && P[k].mId === m.id && P[k].base !== undefined) { P[k].base = baseOf(m); P[k].noBase = noBase(m); } });
+}
 const fmtW = v => String(round1(v));
 const fmtTotal = v => v === 0 ? 'BW' : `${round1(v)} ${unit()}`;
 const snap = v => { const st = step(); return Math.max(0, round1(Math.round(v / st) * st)); };
@@ -201,7 +215,7 @@ const diffTxt = d => d ? `difficulty ${d} (${DIFF_SHORT[d]})` : '';
 function lastLine(l, withDate = true) {
   const e = lastEnt(l); if (!e) return '';
   if (e.kind === 'cardio') return `${cardioSummary(e)}${e.diff ? ' · d' + e.diff : ''}${withDate ? ' · ' + fmtD(l.date) : ''}`;
-  return `${fmtTotal(dispW(e))}${e.reps ? ' × ' + e.reps : ''}${e.diff ? ' · d' + e.diff : ''}${withDate ? ' · ' + fmtD(l.date) : ''}${l.seed ? ' · starting weight' : ''}`;
+  return `${fmtTotal(dispW(e))}${e.base === null ? ' + base?' : ''}${e.reps ? ' × ' + e.reps : ''}${e.diff ? ' · d' + e.diff : ''}${withDate ? ' · ' + fmtD(l.date) : ''}${l.seed ? ' · starting weight' : ''}`;
 }
 
 /* ---------------- Routing ---------------- */
@@ -222,10 +236,14 @@ function weightPicker(p) {
   <div class="grow bigval" id="wv-${p}" data-testid="weight-value">${weightBig(p)}</div>
   <button class="step" data-a="wstep" data-p="${p}" data-d="1" aria-label="plus">+</button></div>
   <div class="total" id="wt-${p}" data-testid="weight-total">${weightTotal(p)}</div>
+  ${P[p].mId ? `<div class="baseline"><button class="linkbtn fine" data-a="ask-base" data-m="${P[p].mId}" data-testid="base-line">${P[p].noBase ? 'Base: — (tap to set)' : `Base: ${fmtW(P[p].base)} ${unit()} (tap to change)`}</button></div>` : ''}
   <div class="wscroll" data-p="${p}" data-testid="weight-chips">${chips.join('')}</div>`;
 }
-const weightBig = p => { const d = P[p]; const tot = round1(d.add + (d.base || 0)); return tot === 0 ? 'BW' : `${fmtW(tot)}<small>${unit()}</small>`; };
-const weightTotal = p => { const d = P[p]; return d.base ? `<b>${fmtW(d.add)}</b> added + <b>${fmtW(d.base)}</b> base = <b>${fmtW(round1(d.add + d.base))} ${unit()}</b>` : `<b>${fmtW(d.add)} ${unit()}</b> added · no base weight`; };
+const weightBig = p => { const d = P[p]; if (d.noBase) return `${fmtW(d.add)}<small>${unit()} + base?</small>`;
+  const tot = round1(d.add + (d.base || 0)); return tot === 0 ? 'BW' : `${fmtW(tot)}<small>${unit()}</small>`; };
+const weightTotal = p => { const d = P[p];
+  if (d.noBase) return `<b>${fmtW(d.add)} ${unit()}</b> added · <span data-testid="base-not-set">base not set — total filled in once it's set</span>`;
+  return d.base ? `<b>${fmtW(d.add)}</b> added + <b>${fmtW(d.base)}</b> base = <b>${fmtW(round1(d.add + d.base))} ${unit()}</b>` : `<b>${fmtW(d.add)} ${unit()}</b> added · no base weight`; };
 function repsPicker(p, lastReps) {
   const r = P[p].reps;
   return `<div class="row"><button class="step" data-a="rstep" data-p="${p}" data-d="-1">−</button>
@@ -379,7 +397,7 @@ const CSV_COLS = ['date', 'template', 'mode', 'exercise', 'machine', 'gym', 'typ
 function entryRow(s, e) {
   const m = machById(exById(e.exId), e.mId);
   return { date: s.date, template: (tplById(s.tid) || {}).name || '', mode: s.mode, exercise: exName(e.exId), machine: machName(e.exId, e.mId), gym: m ? m.gym : '', type: e.kind,
-    set: e.set || '', weight: e.kind === 'set' ? e.w : '', added_weight: e.kind === 'set' ? e.add : '', base_weight: e.kind === 'set' ? (e.base || 0) : '', unit: e.kind === 'set' ? (e.u || 'lb') : '',
+    set: e.set || '', weight: e.kind === 'set' ? (e.base === null ? '' : e.w) : '', added_weight: e.kind === 'set' ? e.add : '', base_weight: e.kind === 'set' ? (e.base === null ? '' : (e.base || 0)) : '', unit: e.kind === 'set' ? (e.u || 'lb') : '',
     reps: e.reps || '', difficulty: e.diff || '', set_seconds: e.secs || '', duration_min: e.dur || '', distance: e.dist || '', distance_unit: e.kind === 'cardio' ? (e.du || '') : '', level: e.level || '',
     tags: (e.tags || []).join('; '), note: e.note || '', thoughts: (s.thoughts || {})[e.exId] || '' };
 }
@@ -667,6 +685,34 @@ function viewWrap(sid) {
 }
 const wrapLine = w => [w.diff ? `difficulty ${w.diff} (${WRAP_DIFF[w.diff].toLowerCase()})` : '', w.energy ? `energy ${w.energy} (${WRAP_ENERGY[w.energy].toLowerCase()})` : '', ...(w.tags || [])].filter(Boolean).join(' · ');
 
+/* ---------------- Base weight prompt (machines imported without a base) ---------------- */
+const baseLater = new Set();   // machines whose inline reminder was dismissed this app run ("base not set — tap to add" stays)
+let BS = null;
+function baseSheetHTML() {
+  const ex = exById(BS.exId), m = machById(ex, BS.mId); const kg = unit() === 'kg'; const bases = kg ? BASE_CHIPS_KG : BASE_CHIPS_LB;
+  const st = kg ? 2.5 : 5, max = kg ? 90 : 200; const all = []; for (let v = 0; v <= max + 1e-9; v = round1(v + st)) all.push(v);
+  const on = v => BS.v !== null && Math.abs(BS.v - v) < 1e-6;
+  const isOther = BS.other || (BS.v !== null && !bases.some(b => Math.abs(b - BS.v) < 1e-6));
+  return `<h2>Base weight for ${esc(m.name)}</h2>
+    <div class="sub">Plate numbers (what your coach writes down) are the <b>added</b> weight. The base is the bar / sled / carriage
+      weight; 0 for weight stacks and dumbbells. You can change it any time.</div>
+    <div class="bigval" style="font-size:34px;margin:10px 0" data-testid="bs-value">${BS.v === null ? 'Not set' : `${fmtW(BS.v)}<small>${unit()}</small>`}</div>
+    <div class="chips" data-testid="bs-chips">${bases.map(b => `<button class="chip ${on(b) && !isOther ? 'on' : ''}" data-a="bs-chip" data-v="${b}">${fmtW(b)}</button>`).join('')}
+      <button class="chip ${isOther ? 'on' : ''}" data-a="bs-other" data-testid="bs-other">Other…</button></div>
+    ${isOther ? `<div class="wscroll" data-p="bs" data-testid="bs-scroll">${all.map(v => `<button class="chip ${on(v) ? 'on' : ''}" data-a="bs-chip" data-o="1" data-v="${v}">${fmtW(v)}</button>`).join('')}</div>` : ''}
+    <div style="height:12px"></div>${BS.v !== null ? `<button class="btn pri" data-a="bs-save" data-testid="bs-save">Save base ${fmtW(BS.v)} ${unit()}</button>` : ''}
+    <button class="btn ghost" data-a="bs-later" data-testid="bs-later">Not sure / later</button>`;
+}
+function openBaseSheet(exId, mId) { const m = machById(exById(exId), mId); if (!m) return; BS = { exId, mId, v: noBase(m) ? null : baseOf(m), other: false }; showBaseSheet(); }
+function showBaseSheet() {
+  openSheet(baseSheetHTML());
+  const sc = $('#sheet-root .wscroll'); if (sc) { const c = sc.querySelector('.chip.on') || sc.querySelector('.chip'); sc.scrollLeft = c.offsetLeft - sc.clientWidth / 2 + c.offsetWidth / 2; }
+}
+// Gentle, non-blocking reminder on the exercise screen (never a modal: logging always works without a base).
+const baseReminder = m => noBase(m) && !baseLater.has(m.id) ? `<div class="card basewarn" data-testid="base-reminder"><b>Base weight not set for ${esc(m.name)}</b>
+  <div class="sub" style="margin-top:4px">Log as usual: sets are saved as <b>added</b> weight and totals are filled in once you set the base (here or in Setup).</div>
+  <div class="row" style="margin-top:8px"><button class="btn sm pri" data-a="ask-base" data-m="${m.id}">Set base</button><button class="btn sm ghost" data-a="base-later" data-m="${m.id}" data-testid="base-later">Later</button></div></div>` : '';
+
 /* ---------------- View: Exercise (one exercise per full screen) ---------------- */
 let curEx = null;        // {sid, exId}
 let pendingDone = null;  // set finished in locked mode, awaiting confirmation
@@ -674,17 +720,17 @@ let lock = null;         // active locked set
 const draftKey = (sid, exId) => `ex-${sid}-${exId}`;
 function initDraft(ses, ex, mId) {
   const p = draftKey(ses.id, ex.id); const old = P[p]; const m = machById(ex, mId);
-  if (old && old.mId === mId) { if (ex.kind !== 'cardio') old.base = baseOf(m); return p; }
+  if (old && old.mId === mId) { if (ex.kind !== 'cardio') { old.base = baseOf(m); old.noBase = noBase(m); } return p; }
   const d = { mId, diff: 3, tags: [] };
   if (ex.kind === 'cardio') {
     const today = cardioOf(ses, ex.id).filter(e => e.mId === mId); const l = lastFor(ex.id, mId, ses.id);
     const ref = today[today.length - 1] || (l && !l.seed && lastEnt(l));
     d.dur = ref ? ref.dur : 20; d.dist = ref ? round1(ref.dist || 0) : 0; d.level = ref ? (ref.level || 0) : 0;
   } else {
-    d.base = baseOf(m);
+    d.base = baseOf(m); d.noBase = noBase(m);
     const today = setsOf(ses, ex.id, mId); const l = lastFor(ex.id, mId, ses.id); const tg = repeatTarget(ses, ex.id);
     const ref = today[today.length - 1] || (tg && tg.mId === mId && tg.ents[tg.ents.length - 1]) || lastEnt(l);
-    d.add = ref ? snap(Math.max(0, dispW(ref) - d.base)) : 0;
+    d.add = ref ? snap(Math.max(0, (ref.base === null ? round1(conv(ref.add || 0, ref.u || 'lb', unit())) : dispW(ref)) - d.base)) : 0;
     d.reps = today.length ? today[today.length - 1].reps : S.settings.defaultReps;
   }
   P[p] = d; return p;
@@ -723,7 +769,7 @@ function machineGrid(ses, ex, mId) {
   return `<div class="mgrid" data-testid="machines">${sortedMachines(ex).map(x => { const l = lastFor(ex.id, x.id, null);
     return `<button class="mcard ${x.id === mId ? 'on' : ''}" data-a="mach" data-m="${x.id}" data-testid="mcard">
       <span class="mn">${esc(x.name)}</span><span class="ml" data-testid="mcard-last">${l ? esc(lastLine(l)) : 'no history yet'}</span>
-      ${machFine(x) ? `<span class="mf">${machFine(x)}</span>` : ''}</button>`; }).join('')}
+      ${machFine(x) ? `<span class="mf">${machFine(x)}</span>` : ''}${x.caution ? `<span class="mf mcaut" data-testid="mcard-caution">⚠️ ${esc(x.caution)}</span>` : ''}</button>`; }).join('')}
     <button class="mcard add" data-a="new-mach" data-ex="${ex.id}"><span class="mn">＋ New machine</span><span class="ml">setup</span></button></div>`;
 }
 function viewExercise(sid, exId) {
@@ -763,7 +809,7 @@ function viewExercise(sid, exId) {
     const goUp = lastE && lastE.diff && lastE.diff <= 2 ? `<div class="goup" data-testid="go-up">⬆ Last time was ${esc(DIFF_SHORT[lastE.diff])} (difficulty ${lastE.diff}) — try going up
         <button class="chip sm" data-a="wstep" data-p="${p}" data-d="1">+${step()} ${unit()}</button></div>` : '';
     const extra = setsOf(ses, exId, mId).filter(e => e.set > 3);
-    body = `<h3>Machine</h3>${machineGrid(ses, ex, mId)}${prevRef}
+    body = `<h3>Machine</h3>${machineGrid(ses, ex, mId)}${prevRef}${baseReminder(m)}
       ${l ? `<div class="last" data-testid="last"><span class="sub">${l.seed ? 'Starting weight on' : 'Last on'} ${esc(m.name)}</span><b>${fmtTotal(dispW(lastE))}${lastE.reps ? ' × ' + lastE.reps : ''}</b>
         <span class="sub">${esc(fmtD(l.date))}${l.seed ? ' (from setup)' : ' · ' + compactSets(l.ents)}${lastE.diff ? ' · ' + esc(diffTxt(lastE.diff)) : ''}</span></div>` :
         `<div class="last" data-testid="last"><span class="sub">No history on ${esc(m.name)} yet — pick a starting weight</span></div>`}
@@ -780,6 +826,8 @@ function viewExercise(sid, exId) {
     ${m ? `<div class="row wrap"><span class="selm">${esc(m.name)}</span>${m.photoId ? `<button class="photo-link" data-a="photo" data-id="${m.photoId}" data-testid="photo-link">📷 Photo</button>` : ''}</div>
       ${machFine(m) ? `<div class="fine" data-testid="loc">${machFine(m)}</div>` : ''}` : ''}
     ${cuesHTML(ex, m)}
+    ${m && m.caution ? `<div class="card" style="border-color:#7a5a12;background:#2a2210" data-testid="m-caution"><div class="row"><b>⚠️ Caution — ${esc(m.name)}</b>
+      <button class="chip sm right" data-a="m-unpin" data-m="${m.id}">Unpin</button></div><div style="margin-top:6px;font-size:17px">${esc(m.caution)}</div></div>` : ''}
     ${headsUp(ses, ex)}${m ? adviceFor(ex, mId) : ''}
     ${body}`;
 }
@@ -818,7 +866,7 @@ function updateSetbarLabel() { if (!curEx) return; const d = P[draftKey(curEx.si
 function logSets(nums, extra = {}) {
   const ses = sesById(curEx.sid); const d = P[draftKey(curEx.sid, curEx.exId)];
   const tot = round1(d.add + d.base);
-  const added = nums.map((n, i) => Object.assign({ id: uid(), kind: 'set', exId: curEx.exId, mId: d.mId, set: n, w: tot, add: d.add, base: d.base, u: unit(), reps: d.reps, diff: d.diff, tags: d.tags.slice(), note: '', ts: nowTs() }, extra));
+  const added = nums.map((n, i) => Object.assign({ id: uid(), kind: 'set', exId: curEx.exId, mId: d.mId, set: n, w: tot, add: d.add, base: d.noBase ? null : d.base, u: unit(), reps: d.reps, diff: d.diff, tags: d.tags.slice(), note: '', ts: nowTs() }, extra));
   ses.entries.push(...added); d.tags = []; markDirty(added.map(e => e.id)); persist(); render();
   toast(nums.length > 1 ? `Logged ${nums.length} sets · ${fmtW(tot)}×${d.reps}` : `Set ${nums[0]} logged · ${fmtW(tot)}×${d.reps}`, () => {
     ses.entries = ses.entries.filter(e => !added.includes(e)); markDeleted(added.map(e => e.id)); persist(); render();
@@ -893,7 +941,7 @@ function groupEntries(s) {
 function backupButtons() {
   return `<h3>Share & backup</h3><button class="btn" data-a="crunchbot" data-testid="crunchbot">🤖 Send to CrunchBot</button><button class="btn ghost" data-a="export-json">Download JSON backup</button>`;
 }
-const entryText = e => e.kind === 'set' ? `${fmtTotal(dispW(e))}${e.base ? ` (${fmtW(round1(conv(e.add, e.u, unit())))}+${fmtW(round1(conv(e.base, e.u, unit())))})` : ''} × ${e.reps}` : cardioSummary(e);
+const entryText = e => e.kind === 'set' ? e.base === null ? `${fmtW(round1(conv(e.add || 0, e.u || 'lb', unit())))} ${unit()} + base? × ${e.reps}` : `${fmtTotal(dispW(e))}${e.base ? ` (${fmtW(round1(conv(e.add, e.u, unit())))}+${fmtW(round1(conv(e.base, e.u, unit())))})` : ''} × ${e.reps}` : cardioSummary(e);
 function viewHistory() {
   const list = sortedSessions().filter(s => s.entries.length);
   if (!list.length) return `<h1>History</h1><div class="empty">No workouts logged yet.</div>${backupButtons()}`;
@@ -928,7 +976,7 @@ function viewHistDetail(sid) {
 function openEntrySheet(sid, id) {
   const s = sesById(sid); const e = s && s.entries.find(x => x.id === id); if (!e) return;
   const p = 'ed';
-  if (e.kind === 'set') { const base = round1(conv(e.base || 0, e.u || 'lb', unit())); P[p] = { base, add: round1(dispW(e) - base), reps: e.reps }; }
+  if (e.kind === 'set') { const base = round1(conv(e.base || 0, e.u || 'lb', unit())); P[p] = { base, noBase: e.base === null, add: round1(dispW(e) - base), reps: e.reps }; }
   else P[p] = { dur: e.dur, dist: e.dist || 0, level: e.level || 0 };
   Object.assign(P[p], { diff: e.diff || 3, tags: (e.tags || []).slice(), sid, id });
   openSheet(`<h2>${esc(exName(e.exId))} · ${e.kind === 'set' ? 'Set ' + e.set : 'Cardio'}</h2><div class="sub">${esc(machName(e.exId, e.mId))} · ${esc(fmtD(s.date))}</div>
@@ -981,7 +1029,8 @@ function viewProgress() {
     else if (prog.metric === 'dur') y = es.reduce((a, e) => a + e.dur, 0);
     else y = es.reduce((a, e) => a + (e.dist || 0), 0);
     return { x: dt, y: round1(y) }; });
-  const labels = { top: `Top total weight (${unit()})`, e1rm: `Est. 1RM (${unit()})`, vol: `Volume (${unit()}×reps)`, dur: 'Duration (min)', dist: `Distance (${S.settings.distUnit})` };
+  const addedOnly = !cardio && Object.values(byDate).some(es => es.some(e => e.kind === 'set' && e.base === null));
+  const labels = { top: addedOnly ? `Top ADDED weight (${unit()}) — base not set` : `Top total weight (${unit()})`, e1rm: `Est. 1RM (${unit()})${addedOnly ? ' — added only' : ''}`, vol: `Volume (${unit()}×reps)${addedOnly ? ' — added only' : ''}`, dur: 'Duration (min)', dist: `Distance (${S.settings.distUnit})` };
   const ys = pts.map(p => p.y);
   return `<h1>Progress</h1>
     <h3>Exercise</h3><select class="field" data-i="prog-ex" aria-label="exercise" data-testid="prog-ex">${exIds.map(id => `<option value="${id}" ${id === prog.ex ? 'selected' : ''}>${esc(exName(id))}</option>`).join('')}</select>
@@ -989,7 +1038,9 @@ function viewProgress() {
     <div style="margin:14px 0">${seg('prog-metric', cardio ? [['dur', 'Duration'], ['dist', 'Distance']] : [['top', 'Top weight'], ['e1rm', 'Est. 1RM'], ['vol', 'Volume']], prog.metric)}</div>
     ${svgChart(pts, labels[prog.metric])}
     <div class="stats"><div><b>${pts.length}</b><span>sessions</span></div><div><b>${ys.length ? round1(Math.max(...ys)) : '—'}</b><span>best</span></div><div><b>${ys.length > 1 ? (ys[ys.length - 1] - ys[0] >= 0 ? '+' : '') + round1(ys[ys.length - 1] - ys[0]) : '—'}</b><span>change</span></div></div>
-    ${!cardio ? '<div class="sub">Weights are totals (added + base). Est. 1RM uses the Epley formula: weight × (1 + reps/30).</div>' : ''}`;
+    ${addedOnly ? `<div class="card basewarn" data-testid="chart-added-only">Showing <b>added weight only</b>: the base for ${esc(machName(prog.ex, prog.m))} isn't set.
+      <button class="linkbtn" data-a="ask-base" data-ex="${prog.ex}" data-m="${prog.m}">Set base</button> and the chart switches to totals.</div>` : ''}
+    ${!cardio && !addedOnly ? '<div class="sub">Weights are totals (added + base). Est. 1RM uses the Epley formula: weight × (1 + reps/30).</div>' : ''}`;
 }
 
 /* ---------------- Setup helpers ---------------- */
@@ -1007,7 +1058,7 @@ function addExerciseToTemplate(t, name) {
   return ex;
 }
 const schedOf = tid => [1, 2, 3, 4, 5, 6, 0].filter(d => S.schedule[d].t === tid).map(d => `${DOW[d].slice(0, 3)} (${S.schedule[d].m})`).join(', ');
-const machSummary = m => [m.base ? `base ${fmtW(baseOf(m))} ${unit()}` : 'no base', m.gym ? `📍${m.gym}` : '', m.loc, m.start ? `start ${fmtTotal(round1(conv(m.start.w, m.start.u, unit())))}${m.start.reps ? '×' + m.start.reps : ''}` : '', m.photoId ? '📷' : '', m.cues ? '🧠' : ''].filter(Boolean).map(esc).join(' · ');
+const machSummary = m => [noBase(m) ? 'base not set' : m.base ? `base ${fmtW(baseOf(m))} ${unit()}` : 'no base', m.caution ? '⚠️' : '', m.gym ? `📍${m.gym}` : '', m.loc, m.start ? `start ${fmtTotal(round1(conv(m.start.w, m.start.u, unit())))}${m.start.reps ? '×' + m.start.reps : ''}` : '', m.photoId ? '📷' : '', m.cues ? '🧠' : ''].filter(Boolean).map(esc).join(' · ');
 
 /* ---------------- View: first-run setup wizard ---------------- */
 function viewSetup(stepName) {
@@ -1045,16 +1096,16 @@ function viewSetup(stepName) {
 let ME = null, meReturn = null;
 function initME(exId, mId) {
   const ex = exById(exId); const m = mId !== 'new' && machById(ex, mId);
-  ME = { exId, key: mId, isNew: !m, name: m ? m.name : '', gym: m ? m.gym : homeGym(), loc: m ? m.loc : '', cues: m ? m.cues : '', base: m ? baseOf(m) : 0,
+  ME = { exId, key: mId, isNew: !m, name: m ? m.name : '', gym: m ? m.gym : homeGym(), loc: m ? m.loc : '', cues: m ? m.cues : '', caution: m ? m.caution || '' : '', base: m ? (noBase(m) ? null : baseOf(m)) : 0,
     photoId: m ? m.photoId || null : null, origPhoto: m ? m.photoId || null : null, hasStart: m ? !!m.start : ex.kind !== 'cardio',
     startReps: m && m.start ? m.start.reps || null : null };
   // new machine: default the starting weight to the exercise's latest total on any machine (a sensible first guess)
   const rm = !m && recentMachine(ex); const prev = rm && lastEnt(lastFor(exId, rm.id));
   const startTot = m && m.start ? round1(conv(m.start.w, m.start.u, unit())) : prev && prev.kind === 'set' ? round1(dispW(prev)) : 0;
-  P.me = { add: snap(Math.max(0, startTot - ME.base)), base: ME.base };
+  P.me = { add: snap(Math.max(0, startTot - (ME.base || 0))), base: ME.base || 0 };
 }
 /* changing the base keeps the starting TOTAL the same (added weight adjusts) */
-function meSetBase(b) { const tot = P.me.add + ME.base; ME.base = b; P.me.base = b; P.me.add = snap(Math.max(0, tot - b)); render(); }
+function meSetBase(b) { const tot = P.me.add + (ME.base || 0); ME.base = b; P.me.base = b || 0; P.me.add = snap(Math.max(0, tot - (b || 0))); render(); }
 function viewMachineEdit(exId, mId) {
   const ex = exById(exId); if (!ex) return `<div class="empty">Exercise not found.</div>`;
   if (!ME || ME.exId !== exId || ME.key !== mId) initME(exId, mId);
@@ -1068,10 +1119,11 @@ function viewMachineEdit(exId, mId) {
       <button class="chip sm ${!ME.gym ? 'on' : ''}" data-a="me-gym" data-v="">No tag</button><button class="chip sm add" data-a="me-gym-new">＋ New gym</button></div>
     <h3>Location note (optional)</h3><input class="field" data-i="me-loc" value="${esc(ME.loc)}" placeholder="e.g. back wall, by the windows" data-testid="me-loc">
     ${ex.kind !== 'cardio' ? `<h3>Base weight (bar / sled / carriage)</h3>
-    <div class="row"><button class="step" data-a="me-bstep" data-d="-1">−</button><div class="grow bigval" style="font-size:34px" data-testid="me-base">${fmtW(ME.base)}<small>${unit()}</small></div><button class="step" data-a="me-bstep" data-d="1">+</button></div>
-    <div class="chips">${bases.map(b => `<button class="chip sm ${Math.abs(ME.base - b) < 1e-6 ? 'on' : ''}" data-a="me-base" data-v="${b}">${b}</button>`).join('')}</div>
+    <div class="row"><button class="step" data-a="me-bstep" data-d="-1">−</button><div class="grow bigval" style="font-size:34px" data-testid="me-base">${ME.base === null ? 'Not set' : `${fmtW(ME.base)}<small>${unit()}</small>`}</div><button class="step" data-a="me-bstep" data-d="1">+</button></div>
+    <div class="chips">${bases.map(b => `<button class="chip sm ${ME.base !== null && Math.abs(ME.base - b) < 1e-6 ? 'on' : ''}" data-a="me-base" data-v="${b}">${b}</button>`).join('')}<button class="chip sm ${ME.base === null ? 'on' : ''}" data-a="me-base" data-v="">Not set</button></div>
     <div class="fine">0 for weight stacks and dumbbells. Weight chips then pick the <b>added</b> weight and the app shows added + base = total.</div>` : ''}
     <h3>Coaching cues for this machine (optional)</h3><textarea class="field" data-i="me-cues" placeholder="e.g. seat 4, handles mid-chest" data-testid="me-cues">${esc(ME.cues)}</textarea>
+    <h3>Caution for this machine (optional)</h3><textarea class="field" data-i="me-caution" placeholder="e.g. don't force depth if the shoulder pinches" data-testid="me-caution">${esc(ME.caution || '')}</textarea>
     <h3>Photo (optional)</h3><div class="chips"><button class="chip sm" data-a="me-photo" data-cap="environment">📷 Take photo</button>
       <button class="chip sm" data-a="me-photo" data-testid="choose-photo">🖼 Choose photo</button>
       ${ME.photoId ? `<button class="chip sm" data-a="photo" data-id="${ME.photoId}" data-testid="me-photo-view">View</button><button class="chip sm" data-a="me-photo-del">Remove</button>` : ''}</div>
@@ -1206,6 +1258,13 @@ document.addEventListener('click', async ev => {
       W = null; wrapReturn = '#/today'; return go(`#/w/${s.id}`); }
     case 'open-wrap': W = null; wrapReturn = `#/h/${ds.sid}`; return go(`#/w/${ds.sid}`);
     case 'wscale': W[ds.k] = +ds.v; return updateScaleUI(ds.k);
+    case 'ask-base': return openBaseSheet(ds.ex || (curEx && curEx.exId), ds.m);
+    case 'bs-chip': BS.v = +ds.v; BS.other = !!ds.o; return showBaseSheet();
+    case 'bs-other': BS.other = true; if (BS.v === null) BS.v = unit() === 'kg' ? 20 : 45; return showBaseSheet();
+    case 'bs-save': { const ex = exById(BS.exId), m = machById(ex, BS.mId); setMachineBase(ex, m, BS.v); persist(); closeSheet(); toast(`Base for ${m.name}: ${fmtW(BS.v)} ${unit()}`); BS = null; return render(); }
+    case 'bs-later': if (BS) baseLater.add(BS.mId); BS = null; closeSheet(); return render();
+    case 'base-later': baseLater.add(ds.m); return render();
+    case 'm-unpin': { const m = machById(exById(curEx.exId), ds.m); if (m) { m.caution = ''; persist(); render(); toast('Caution removed (edit it in Setup)'); } return; }
     case 'wtag': { const v = ds.v; W.tags = W.tags.includes(v) ? W.tags.filter(t => t !== v) : W.tags.concat(v); el.classList.toggle('on', W.tags.includes(v)); return; }
     case 'wdur': W.durMin = clamp(W.durMin + (+ds.d), 0, 600); { const d = $('[data-testid=wrap-duration]'); if (d) d.textContent = `${W.durMin} min`; } return;
     case 'wrap-save': { const s = sesById(W.sid); s.wrap = { diff: W.diff, energy: W.energy, tags: W.tags.slice(), thoughts: (W.thoughts || '').trim(), durMin: W.durMin, ts: Date.now() };
@@ -1253,7 +1312,7 @@ document.addEventListener('click', async ev => {
     case 'edit-entry': return openEntrySheet(ds.sid, ds.id);
     case 'entry-save': {
       const d = P.ed; const s = sesById(d.sid); const e = s.entries.find(x => x.id === d.id);
-      if (e.kind === 'set') { e.add = d.add; e.base = d.base; e.w = round1(d.add + d.base); e.u = unit(); e.reps = d.reps; } else { e.dur = d.dur; e.dist = round1(d.dist); e.level = d.level || 0; }
+      if (e.kind === 'set') { e.add = d.add; e.base = d.noBase ? null : d.base; e.w = round1(d.add + d.base); e.u = unit(); e.reps = d.reps; } else { e.dur = d.dur; e.dist = round1(d.dist); e.level = d.level || 0; }
       e.diff = d.diff; e.tags = d.tags.slice();
       markDirty([e.id]); persist(); closeSheet(); render(); return toast('Updated');
     }
@@ -1297,8 +1356,8 @@ document.addEventListener('click', async ev => {
     // machine editor
     case 'me-gym': ME.gym = ds.v; return render();
     case 'me-gym-new': { const g = await askText('New gym tag', '', 'e.g. San Jose'); if (g) ME.gym = g; return render(); }
-    case 'me-base': return meSetBase(+ds.v);
-    case 'me-bstep': return meSetBase(clamp(round1(ME.base + (+ds.d) * (unit() === 'kg' ? 2.5 : 5)), 0, 200));
+    case 'me-base': return meSetBase(ds.v === '' ? null : +ds.v);
+    case 'me-bstep': return meSetBase(clamp(round1((ME.base || 0) + (+ds.d) * (unit() === 'kg' ? 2.5 : 5)), 0, 200));
     case 'me-hasstart': ME.hasStart = ds.v === 'yes'; return render();
     case 'me-reps': ME.startReps = ds.v === '' ? null : +ds.v; return render();
     case 'me-photo': return pickFile('image/*', ds.cap).then(f => f && setMEPhoto(f));
@@ -1353,11 +1412,13 @@ function saveMachine() {
   let m = !ME.isNew && machById(ex, ME.key);
   if (!m) { m = { id: uid() }; ex.machines.push(m); }
   const renamed = !ME.isNew && m.name !== name;
-  Object.assign(m, { name, gym: (ME.gym || '').trim(), loc: (ME.loc || '').trim(), cues: (ME.cues || '').trim(), base: ex.kind === 'cardio' ? 0 : ME.base, bu: unit() });
+  Object.assign(m, { name, gym: (ME.gym || '').trim(), loc: (ME.loc || '').trim(), cues: (ME.cues || '').trim(), caution: (ME.caution || '').trim(), bu: m.bu || unit() });
+  if (m.base === undefined) m.base = null;
+  setMachineBase(ex, m, ex.kind === 'cardio' ? 0 : ME.base);
   if (ME.origPhoto && ME.origPhoto !== ME.photoId) photoDel(ME.origPhoto).catch(() => {});
   if (ME.photoId) m.photoId = ME.photoId; else delete m.photoId;
   if (ex.kind !== 'cardio') {
-    if (ME.hasStart && !(round1(P.me.add + ME.base) === 0 && !ME.startReps)) m.start = { w: round1(P.me.add + ME.base), u: unit(), reps: ME.startReps || null, date: (m.start && m.start.date) || todayStr(), ts: nowTs() };
+    if (ME.hasStart && !(round1(P.me.add + (ME.base || 0)) === 0 && !ME.startReps)) m.start = { w: round1(P.me.add + (ME.base || 0)), u: unit(), reps: ME.startReps || null, date: (m.start && m.start.date) || todayStr(), ts: nowTs() };
     else delete m.start;
   }
   Object.keys(P).forEach(k => { if (P[k] && P[k].mId === m.id) delete P[k]; }); // re-derive drafts with the new base
@@ -1376,6 +1437,7 @@ document.addEventListener('input', ev => {
   else if (i === 'me-name' && ME) ME.name = el.value;
   else if (i === 'me-loc' && ME) ME.loc = el.value;
   else if (i === 'me-cues' && ME) ME.cues = el.value;
+  else if (i === 'me-caution' && ME) ME.caution = el.value;
 });
 document.addEventListener('change', ev => {
   const el = ev.target; const i = el.dataset && el.dataset.i; if (!i) return;
