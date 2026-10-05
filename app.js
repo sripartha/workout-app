@@ -1,7 +1,7 @@
 /* Lift Log — tap-only workout logger PWA. Plain JS, no build step, no dependencies. */
 'use strict';
 (function () {
-const APP_VERSION = '2.4.0';
+const APP_VERSION = '2.4.1';
 const LB_PER_KG = 2.20462;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -1397,7 +1397,6 @@ function viewSettings() {
   ${importSnapCount ? `<button class="btn ghost" data-a="undo-import" data-testid="undo-import">Undo last import</button>
   <div class="sub" style="margin:4px 0 10px">Restores the automatic safety snapshot taken just before your last import (${importSnapCount} saved).</div>` : ''}
   <div class="sub" style="margin:10px 0">Machines update automatically from the published catalog when you open the app. Manual import is a fallback. Data is stored only on this phone (IndexedDB). Export a backup now and then.</div>
-  <button class="btn bad" data-a="reset-all">Erase all data</button>
   <div class="sub" style="text-align:center;margin:20px 0">Lift Log v${APP_VERSION}</div>`;
 }
 function viewTplEdit(tid) {
@@ -1620,13 +1619,14 @@ document.addEventListener('click', async ev => {
     case 'sync-save': S.sync.url = ($('#sync-url').value || '').trim(); S.sync.token = ($('#sync-token').value || '').trim(); S.sync.err = ''; persist(); toast('Sync settings saved'); render(); return syncNow();
     case 'sync-now': if (!S.sync.url) return toast('Add the sync URL first'); toast('Syncing…'); await syncNow({ force: true }); render(); return toast(S.sync.err ? 'Sync failed — will retry' : 'Synced');
     case 'sync-full': markDirty(S.sessions.flatMap(s => s.entries.map(e => e.id))); persist(); render(); return syncNow({ force: true });
-    case 'reset-all': {
-      if (!await confirmSheet('Erase everything?', 'All sessions, exercises, machines, photos and settings on this phone will be deleted. Export a backup first if unsure.', 'Erase all')) return;
-      try { if (DB.db) await DB.clear('photos'); else memPhotos.clear(); } catch (e) {}
-      S = seed(); persist(); Object.keys(P).forEach(k => delete P[k]); toast('All data erased'); return go('#/today');
-    }
   }
 });
+async function eraseAllData() {
+  try { if (DB.db) await DB.clear('photos'); else memPhotos.clear(); } catch (e) {}
+  try { await saveImportSnaps([]); } catch (e) {}
+  S = seed(); persist(); Object.keys(P).forEach(k => delete P[k]);
+  go('#/today');
+}
 async function setMEPhoto(file) {
   try {
     toast('Saving photo…');
@@ -1701,6 +1701,6 @@ function registerSW() {
   if (navigator.storage && navigator.storage.persist) navigator.storage.persisted().then(p => p || navigator.storage.persist()).catch(() => {});
   scheduleSync(1500);
   window.__liftlog = { state: () => S, persist, syncNow, version: APP_VERSION, wake: () => ({ wanted: wakeWanted, held: !!wakeSentinel }),
-    mergeCatalog, saveImportSnapshot, loadImportSnaps, refreshSnapCount, checkCatalogUpdate, undoLastImport };
+    mergeCatalog, saveImportSnapshot, loadImportSnaps, refreshSnapCount, checkCatalogUpdate, undoLastImport, eraseAllData };
 })();
 })();
