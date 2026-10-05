@@ -1,7 +1,7 @@
 /* Lift Log — tap-only workout logger PWA. Plain JS, no build step, no dependencies. */
 'use strict';
 (function () {
-const APP_VERSION = '2.4.1';
+const APP_VERSION = '2.4.2';
 const LB_PER_KG = 2.20462;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -229,22 +229,41 @@ const P = {};
 function seg(action, options, cur, extra = '') {
   return `<div class="seg">${options.map(([v, l]) => `<button data-a="${action}" data-v="${esc(v)}" ${extra} class="${String(v) === String(cur) ? 'on' : ''}">${esc(l)}</button>`).join('')}</div>`;
 }
-// Weight picker: chips select the ADDED weight; base (bar / sled) is shown and added to make the total.
+// Weight picker: big controls = WORKING/ADDED weight (plates or stack pin). Base is a quiet locked line.
+const baseUnlocked = new Set(); // machine ids unlocked for base edit this session
+function baseLineHTML(p) {
+  const d = P[p]; if (!d || !d.mId) return '';
+  if (d.noBase) {
+    return `<div class="baseline" data-testid="base-line"><button class="linkbtn fine" data-a="ask-base" data-m="${d.mId}" data-testid="set-base">Set base</button><span class="bquiet"> · bar/sled/carriage (rarely changes)</span></div>`;
+  }
+  const unlocked = baseUnlocked.has(d.mId);
+  if (unlocked) {
+    return `<div class="baseline" data-testid="base-line"><button class="linkbtn fine" data-a="ask-base" data-m="${d.mId}">Base: ${fmtW(d.base)} ${unit()} — tap to change</button>
+      <button class="chip sm baselock" data-a="lock-base" data-m="${d.mId}" data-testid="lock-base" aria-label="Lock base">🔒 Lock</button></div>`;
+  }
+  return `<div class="baseline locked" data-testid="base-line"><span class="bquiet">🔒 Base ${fmtW(d.base)} ${unit()}</span>
+    <button class="chip sm baselock" data-a="unlock-base" data-m="${d.mId}" data-testid="unlock-base" aria-label="Unlock base to edit">Unlock</button></div>`;
+}
 function weightPicker(p) {
   const st = step(); const max = unit() === 'kg' ? 300 : 650; const v = P[p].add; const chips = [];
   for (let i = 0; i * st <= max + 1e-9; i++) { const xv = round1(i * st); chips.push(`<button class="chip ${Math.abs(xv - v) < 1e-6 ? 'on' : ''}" data-a="w" data-p="${p}" data-v="${xv}">${fmtW(xv)}</button>`); }
-  return `<div class="row"><button class="step" data-a="wstep" data-p="${p}" data-d="-1" aria-label="minus">−</button>
+  // Base line sits ABOVE working controls so it can never cover the chip strip (was intercepting taps).
+  return `${baseLineHTML(p)}
+  <div class="wlabel" data-testid="working-label">Working weight <span class="bquiet">(plates / stack pin)</span></div>
+  <div class="row"><button class="step" data-a="wstep" data-p="${p}" data-d="-1" aria-label="minus">−</button>
   <div class="grow bigval" id="wv-${p}" data-testid="weight-value">${weightBig(p)}</div>
   <button class="step" data-a="wstep" data-p="${p}" data-d="1" aria-label="plus">+</button></div>
-  <div class="total" id="wt-${p}" data-testid="weight-total">${weightTotal(p)}</div>
-  ${P[p].mId ? `<div class="baseline"><button class="linkbtn fine" data-a="ask-base" data-m="${P[p].mId}" data-testid="base-line">${P[p].noBase ? 'Base: — (tap to set)' : `Base: ${fmtW(P[p].base)} ${unit()} (tap to change)`}</button></div>` : ''}
-  <div class="wscroll" data-p="${p}" data-testid="weight-chips">${chips.join('')}</div>`;
+  <div class="wscroll" data-p="${p}" data-testid="weight-chips">${chips.join('')}</div>
+  <div class="total" id="wt-${p}" data-testid="weight-total">${weightTotal(p)}</div>`;
 }
-const weightBig = p => { const d = P[p]; if (d.noBase) return `${fmtW(d.add)}<small>${unit()} + base?</small>`;
-  const tot = round1(d.add + (d.base || 0)); return tot === 0 ? 'BW' : `${fmtW(tot)}<small>${unit()}</small>`; };
+// Big number = working/added weight (what you change every set)
+const weightBig = p => `${fmtW(P[p].add)}<small>${unit()}</small>`;
 const weightTotal = p => { const d = P[p];
-  if (d.noBase) return `<b>${fmtW(d.add)} ${unit()}</b> added · <span data-testid="base-not-set">base not set — total filled in once it's set</span>`;
-  return d.base ? `<b>${fmtW(d.add)}</b> added + <b>${fmtW(d.base)}</b> base = <b>${fmtW(round1(d.add + d.base))} ${unit()}</b>` : `<b>${fmtW(d.add)} ${unit()}</b> added · no base weight`; };
+  if (d.noBase) return `Working <b>${fmtW(d.add)} ${unit()}</b> · <span data-testid="base-not-set">base not set — total filled in once set</span>`;
+  const tot = round1(d.add + (d.base || 0));
+  // base 0 (weight stacks) is still a set base — show working + base
+  return `Total <b>${fmtW(tot)} ${unit()}</b> <span class="bquiet">(${fmtW(d.add)} working + ${fmtW(d.base || 0)} base)</span>`;
+};
 function repsPicker(p, lastReps) {
   const r = P[p].reps;
   return `<div class="row"><button class="step" data-a="rstep" data-p="${p}" data-d="-1">−</button>
@@ -934,10 +953,8 @@ function showBaseSheet() {
   openSheet(baseSheetHTML());
   const sc = $('#sheet-root .wscroll'); if (sc) { const c = sc.querySelector('.chip.on') || sc.querySelector('.chip'); sc.scrollLeft = c.offsetLeft - sc.clientWidth / 2 + c.offsetWidth / 2; }
 }
-// Gentle, non-blocking reminder on the exercise screen (never a modal: logging always works without a base).
-const baseReminder = m => noBase(m) && !baseLater.has(m.id) ? `<div class="card basewarn" data-testid="base-reminder"><b>Base weight not set for ${esc(m.name)}</b>
-  <div class="sub" style="margin-top:4px">Log as usual: sets are saved as <b>added</b> weight and totals are filled in once you set the base (here or in Setup).</div>
-  <div class="row" style="margin-top:8px"><button class="btn sm pri" data-a="ask-base" data-m="${m.id}">Set base</button><button class="btn sm ghost" data-a="base-later" data-m="${m.id}" data-testid="base-later">Later</button></div></div>` : '';
+// Base reminder: keep quiet — the weight picker's "Set base" line is enough (no big card on the set screen).
+const baseReminder = m => '';
 
 /* ---------------- View: Exercise (one exercise per full screen) ---------------- */
 let curEx = null;        // {sid, exId}
@@ -1041,7 +1058,7 @@ function viewExercise(sid, exId) {
         `<div class="last" data-testid="last"><span class="sub">No history on ${esc(m.name)} yet — pick a starting weight</span></div>`}
       ${goUp}
       ${tg && tg.mId === mId ? `<div class="target" data-testid="target">🎯 Repeat target (${esc(dowName(tg.src.date))}): <b>${compactSets(tg.ents)}</b></div>` : ''}
-      <h3>Weight</h3>${weightPicker(p)}
+      <h3>Working weight</h3>${weightPicker(p)}
       <h3>Reps</h3>${repsPicker(p, lastE && lastE.reps ? lastE.reps : null)}
       ${extra.length ? `<h3>Extra sets</h3>${extra.map(e => `<button class="entry" data-a="edit-entry" data-sid="${sid}" data-id="${e.id}"><span class="n">Set ${e.set}</span><span class="grow">${fmtTotal(dispW(e))} × ${e.reps}</span>✎</button>`).join('')}` : ''}
       <h3>Difficulty</h3>${diffPicker(p)}
@@ -1063,7 +1080,7 @@ function viewConfirm(ses, ex) {
     <div class="sub">${esc(ex.name)} · ${esc(m ? m.name : '')}</div>
     <h1>Set ${pdn.setNo} done ✓</h1><div class="bigval" style="font-size:30px" data-testid="confirm-time">⏱ ${mmss(pdn.secs)}</div>
     <div class="sub" style="text-align:center;margin-bottom:6px">Confirm what you did</div>
-    <h3>Weight</h3>${weightPicker(p)}
+    <h3>Working weight</h3>${weightPicker(p)}
     <h3>Reps</h3>${repsPicker(p, null)}
     <h3>Difficulty</h3>${diffPicker(p)}
     <h3>Quick notes</h3>${notePicker(p)}
@@ -1485,10 +1502,17 @@ document.addEventListener('click', async ev => {
       W = null; wrapReturn = '#/today'; return go(`#/w/${s.id}`); }
     case 'open-wrap': W = null; wrapReturn = `#/h/${ds.sid}`; return go(`#/w/${ds.sid}`);
     case 'wscale': W[ds.k] = +ds.v; return updateScaleUI(ds.k);
-    case 'ask-base': return openBaseSheet(ds.ex || (curEx && curEx.exId), ds.m);
+    case 'ask-base': {
+      const mid = ds.m; const ex = exById(ds.ex || (curEx && curEx.exId)); const m = machById(ex, mid);
+      if (!m) return;
+      if (!noBase(m) && !baseUnlocked.has(mid)) return toast('Unlock base to change it');
+      return openBaseSheet(ex.id, mid);
+    }
+    case 'unlock-base': baseUnlocked.add(ds.m); return render();
+    case 'lock-base': baseUnlocked.delete(ds.m); return render();
     case 'bs-chip': BS.v = +ds.v; BS.other = !!ds.o; return showBaseSheet();
     case 'bs-other': BS.other = true; if (BS.v === null) BS.v = unit() === 'kg' ? 20 : 45; return showBaseSheet();
-    case 'bs-save': { const ex = exById(BS.exId), m = machById(ex, BS.mId); setMachineBase(ex, m, BS.v); persist(); closeSheet(); toast(`Base for ${m.name}: ${fmtW(BS.v)} ${unit()}`); BS = null; return render(); }
+    case 'bs-save': { const ex = exById(BS.exId), m = machById(ex, BS.mId); setMachineBase(ex, m, BS.v); baseUnlocked.delete(m.id); persist(); closeSheet(); toast(`Base for ${m.name}: ${fmtW(BS.v)} ${unit()}`); BS = null; return render(); }
     case 'bs-later': if (BS) baseLater.add(BS.mId); BS = null; closeSheet(); return render();
     case 'base-later': baseLater.add(ds.m); return render();
     case 'm-unpin': { const m = machById(exById(curEx.exId), ds.m); if (m) { m.caution = ''; persist(); render(); toast('Caution removed (edit it in Setup)'); } return; }
