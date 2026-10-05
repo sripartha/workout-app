@@ -1,7 +1,7 @@
 /* Lift Log — tap-only workout logger PWA. Plain JS, no build step, no dependencies. */
 'use strict';
 (function () {
-const APP_VERSION = '2.4.3';
+const APP_VERSION = '2.4.4';
 const LB_PER_KG = 2.20462;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -892,8 +892,8 @@ function viewToday() {
       ${existing ? `<a class="btn pri" href="#/s/${existing.id}">Continue ${esc(t.name)} · ${existing.entries.length} logged</a>` :
         prev ? `<button class="btn pri" data-a="repeat" data-sid="${prev.id}" data-t="${t.id}" data-testid="repeat">Repeat ${esc(dowName(prev.date))}'s ${esc(t.name)}</button>
                 <div class="sub" style="text-align:center;margin:6px 0 4px">${esc(fmtD(prev.date))} · ${prev.mode === 'coach' ? 'with coach' : 'solo'} · ${(n => `${n} exercise${n === 1 ? '' : 's'}`)(new Set(prev.entries.map(e => e.exId)).size)}</div>
-                <button class="btn" data-a="start" data-t="${t.id}" data-m="${sch.m}">Start fresh ${esc(t.name)}</button>` :
-        nEx ? `<button class="btn pri" data-a="start" data-t="${t.id}" data-m="${sch.m}" data-testid="start-suggested">Start ${esc(t.name)}</button>`
+                <button class="btn" data-a="start" data-t="${t.id}" data-m="${sch.m}">Open fresh ${esc(t.name)}</button>` :
+        nEx ? `<button class="btn pri" data-a="start" data-t="${t.id}" data-m="${sch.m}" data-testid="start-suggested">Open ${esc(t.name)}</button>`
             : `<a class="btn pri" href="#/setup/days">Add exercises to ${esc(t.name)}</a>`}</div>`;
   } else {
     hero = `<div class="card hero" data-testid="suggest"><div class="sub">Today's plan · ${esc(DOW[d.getDay()])}</div><h1 style="margin:2px 0 6px">Rest day</h1><div class="sub">Nothing scheduled. Pick any workout below.</div></div>`;
@@ -909,7 +909,8 @@ function viewToday() {
     ${others.map(s => `<a class="li" href="#/s/${s.id}"><div><div class="t">Continue ${esc((tplById(s.tid) || {}).name)}</div><div class="s">${s.entries.length} entries logged today</div></div><span class="badge part">open</span></a>`).join('')}
     <h3>This week</h3><div class="week">${week}</div>
     <h3>Other workouts</h3>
-    <div class="list">${S.templates.map(x => `<button class="li" data-a="start" data-t="${x.id}" data-m="${sch.t === x.id ? sch.m : 'solo'}" data-testid="tpl-${x.id}"><div><div class="t">${esc(x.name)}</div><div class="s">${(n => n === 0 ? 'No exercises yet — add in Setup' : n === 1 ? '1 exercise' : n + ' exercises')(x.exIds.filter(id => exById(id) && !exById(id).archived).length)}</div></div><span class="badge">Start</span></button>`).join('')}</div>`;
+    <div class="list">${S.templates.map(x => { const live = todays.find(s => s.tid === x.id); const badge = live ? 'Continue' : 'Open';
+      return `<button class="li" data-a="start" data-t="${x.id}" data-m="${sch.t === x.id ? sch.m : 'solo'}" data-testid="tpl-${x.id}"><div><div class="t">${esc(x.name)}</div><div class="s">${(n => n === 0 ? 'No exercises yet — add in Setup' : n === 1 ? '1 exercise' : n + ' exercises')(x.exIds.filter(id => exById(id) && !exById(id).archived).length)}</div></div><span class="badge${live ? ' part' : ''}">${badge}</span></button>`; }).join('')}</div>`;
 }
 
 /* ---------------- View: Session ---------------- */
