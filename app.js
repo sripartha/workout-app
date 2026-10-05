@@ -1,7 +1,7 @@
 /* Lift Log — tap-only workout logger PWA. Plain JS, no build step, no dependencies. */
 'use strict';
 (function () {
-const APP_VERSION = '2.4.7';
+const APP_VERSION = '2.4.8';
 const LB_PER_KG = 2.20462;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -290,18 +290,19 @@ function baseLineHTML(p) {
   return `<div class="baseline locked" data-testid="base-line"><span class="bquiet">🔒 Base ${fmtW(d.base)} ${unit()}</span>
     <button class="chip sm baselock" data-a="unlock-base" data-m="${d.mId}" data-testid="unlock-base" aria-label="Unlock base to edit">Unlock</button></div>`;
 }
-function weightPicker(p) {
+function weightPicker(p, compact = false) {
   const v = P[p].add; const list = weightChipList(p);
   const chips = list.map(xv => `<button class="chip ${Math.abs(xv - v) < 1e-6 ? 'on' : ''}" data-a="w" data-p="${p}" data-v="${xv}">${fmtW(xv)}</button>`);
   const custom = !!(machineForDraft(p) && machineForDraft(p).weightChips);
-  // Base line sits ABOVE working controls so it can never cover the chip strip (was intercepting taps).
-  return `${baseLineHTML(p)}
-  <div class="wlabel" data-testid="working-label">Working weight <span class="bquiet">${custom ? '(cable stack plates)' : '(plates / stack pin)'}</span></div>
+  const cls = compact ? ' wp-compact' : '';
+  const showBase = p !== 'ed'; // entry sheet stays short — base lives on the log screen
+  return `<div class="wpick${cls}">${showBase ? baseLineHTML(p) : ''}
+  <div class="wlabel" data-testid="working-label">Working <span class="bquiet">${custom ? '(cable)' : '(plates / pin)'}</span></div>
   <div class="row"><button class="step" data-a="wstep" data-p="${p}" data-d="-1" aria-label="minus">−</button>
   <div class="grow bigval" id="wv-${p}" data-testid="weight-value">${weightBig(p)}</div>
   <button class="step" data-a="wstep" data-p="${p}" data-d="1" aria-label="plus">+</button></div>
   <div class="wscroll" data-p="${p}" data-testid="weight-chips">${chips.join('')}</div>
-  <div class="total" id="wt-${p}" data-testid="weight-total">${weightTotal(p)}</div>`;
+  <div class="total" id="wt-${p}" data-testid="weight-total">${weightTotal(p)}</div></div>`;
 }
 // Big number = working/added weight (what you change every set)
 const weightBig = p => `${fmtW(P[p].add)}<small>${unit()}</small>`;
@@ -311,8 +312,15 @@ const weightTotal = p => { const d = P[p];
   // base 0 (weight stacks) is still a set base — show working + base
   return `Total <b>${fmtW(tot)} ${unit()}</b> <span class="bquiet">(${fmtW(d.add)} working + ${fmtW(d.base || 0)} base)</span>`;
 };
-function repsPicker(p, lastReps) {
+function repsPicker(p, lastReps, compact = false) {
   const r = P[p].reps;
+  if (compact) {
+    return `<div class="row reps-compact"><button class="step" data-a="rstep" data-p="${p}" data-d="-1">−</button>
+      <div class="grow bigval" id="rv-${p}" data-testid="reps-value">${r}<small>reps</small></div>
+      <button class="step" data-a="rstep" data-p="${p}" data-d="1">+</button>
+      ${lastReps != null && lastReps !== r ? `<button class="chip sm" data-a="rset" data-p="${p}" data-v="${lastReps}" data-testid="last-reps">Last ${lastReps}</button>` : ''}</div>
+      <input type="range" class="reps-hidden" min="1" max="15" step="1" value="${Math.min(15, r)}" data-i="reps" data-p="${p}" aria-label="reps">`;
+  }
   return `<div class="row"><button class="step" data-a="rstep" data-p="${p}" data-d="-1">−</button>
   <div class="grow bigval" id="rv-${p}" data-testid="reps-value">${r}<small>reps</small></div>
   <button class="step" data-a="rstep" data-p="${p}" data-d="1">+</button></div>
@@ -1097,12 +1105,14 @@ function adviceFor(ex, mId) {
   return `<div data-testid="advice" style="margin:8px 0">${list.map(a => `<div class="row" style="font-size:12px;color:var(--mut);padding:4px 0"><span class="grow"><b>Advice</b>${a.date ? ` (${esc(a.date)})` : ''}${a.machine ? ` · ${esc(a.machine)}` : ''}: ${esc(a.note)}</span>
     <button class="chip sm" data-a="dismiss-advice" data-id="${a.id}" style="min-height:34px">Dismiss</button></div>`).join('')}</div>`;
 }
-function machineGrid(ses, ex, mId) {
-  return `<div class="mgrid" data-testid="machines">${sortedMachines(ex).map(x => { const l = lastFor(ex.id, x.id, null);
+function machineGrid(ses, ex, mId, mode = 'grid') {
+  const cards = sortedMachines(ex).map(x => { const l = lastFor(ex.id, x.id, null);
     return `<button class="mcard ${x.id === mId ? 'on' : ''}" data-a="mach" data-m="${x.id}" data-testid="mcard">
       <span class="mn">${esc(x.name)}</span><span class="ml" data-testid="mcard-last">${l ? esc(lastLine(l)) : 'no history yet'}</span>
-      ${machFine(x) ? `<span class="mf">${machFine(x)}</span>` : ''}${x.caution ? `<span class="mf mcaut" data-testid="mcard-caution">⚠️ ${esc(x.caution)}</span>` : ''}</button>`; }).join('')}
-    <button class="mcard add" data-a="new-mach" data-ex="${ex.id}"><span class="mn">＋ New machine</span><span class="ml">setup</span></button></div>`;
+      ${machFine(x) ? `<span class="mf">${machFine(x)}</span>` : ''}${x.caution ? `<span class="mf mcaut" data-testid="mcard-caution">⚠️ ${esc(x.caution)}</span>` : ''}</button>`; }).join('');
+  const add = `<button class="mcard add" data-a="new-mach" data-ex="${ex.id}"><span class="mn">＋ New</span><span class="ml">machine</span></button>`;
+  if (mode === 'strip') return `<div class="mstrip" data-testid="machines">${cards}${add}</div>`;
+  return `<div class="mgrid" data-testid="machines">${cards}${add}</div>`;
 }
 function viewExercise(sid, exId) {
   const ses = sesById(sid); const ex = exById(exId); if (!ses || !ex) return `<div class="empty">Not found. <a href="#/today">Back</a></div>`;
@@ -1137,30 +1147,35 @@ function viewExercise(sid, exId) {
       ${cardioPicker(p)}<h3>Difficulty</h3>${diffPicker(p)}<h3>Quick notes</h3>${notePicker(p)}`;
   } else {
     const l = lastFor(exId, mId, sid); const lastE = lastEnt(l);
-    const prevRef = recent && recent.id !== mId && recentL ? `<div class="fine prevm" data-testid="prev-machine">↩ Previous machine: <b>${esc(recent.name)}</b> — ${esc(lastLine(recentL))}</div>` : '';
-    const goUp = lastE && lastE.diff && lastE.diff <= 2 ? `<div class="goup" data-testid="go-up">⬆ Last time was ${esc(DIFF_SHORT[lastE.diff])} (difficulty ${lastE.diff}) — try going up
-        <button class="chip sm" data-a="wstep" data-p="${p}" data-d="1">+${step()} ${unit()}</button></div>` : '';
+    const goUp = lastE && lastE.diff && lastE.diff <= 2 ? `<span class="goup-inline" data-testid="go-up"><button class="chip sm" data-a="wstep" data-p="${p}" data-d="1">⬆ go up (+${step()})</button></span>` : '';
     const extra = setsOf(ses, exId, mId).filter(e => e.set > 3);
-    body = `<h3>Machine</h3>${machineGrid(ses, ex, mId)}${prevRef}${baseReminder(m)}
-      ${l ? `<div class="last" data-testid="last"><span class="sub">${l.seed ? 'Starting weight on' : 'Last on'} ${esc(m.name)}</span><b>${fmtTotal(dispW(lastE))}${lastE.reps ? ' × ' + lastE.reps : ''}</b>
-        <span class="sub">${esc(fmtD(l.date))}${l.seed ? ' (from setup)' : ' · ' + compactSets(l.ents)}${lastE.diff ? ' · ' + esc(diffTxt(lastE.diff)) : ''}</span></div>` :
-        `<div class="last" data-testid="last"><span class="sub">No history on ${esc(m.name)} yet — pick a starting weight</span></div>`}
-      ${goUp}
-      ${tg && tg.mId === mId ? `<div class="target" data-testid="target">🎯 Repeat target (${esc(dowName(tg.src.date))}): <b>${compactSets(tg.ents)}</b></div>` : ''}
-      <h3>Working weight</h3>${weightPicker(p)}
-      <h3>Reps</h3>${repsPicker(p, lastE && lastE.reps ? lastE.reps : null)}
-      ${extra.length ? `<h3>Extra sets</h3>${extra.map(e => `<button class="entry" data-a="edit-entry" data-sid="${sid}" data-id="${e.id}"><span class="n">Set ${e.set}</span><span class="grow">${fmtTotal(dispW(e))} × ${e.reps}</span>✎</button>`).join('')}` : ''}
-      <h3>Difficulty</h3>${diffPicker(p)}
-      <h3>Quick notes</h3>${notePicker(p)}`;
+    const lastBlock = l
+      ? `<div class="last last-prom" data-testid="last"><span class="sub">${l.seed ? 'Starting' : 'Last'} on this machine</span>
+          <b>${fmtTotal(dispW(lastE))}${lastE.reps ? ' × ' + lastE.reps : ''}</b>
+          <span class="sub">${esc(fmtD(l.date))}${l.seed ? '' : ' · ' + compactSets(l.ents)}${lastE.diff ? ' · d' + lastE.diff : ''}</span>
+          ${goUp}</div>`
+      : `<div class="last last-prom" data-testid="last"><span class="sub">No history on this machine yet</span></div>`;
+    // Log zone first (last + weight + reps) so setbar never covers chips; machine tiles stay as a compact strip.
+    body = `<div class="ex-log">
+      ${lastBlock}
+      ${tg && tg.mId === mId ? `<div class="target target-sm" data-testid="target">🎯 ${esc(dowName(tg.src.date))}: <b>${compactSets(tg.ents)}</b></div>` : ''}
+      ${weightPicker(p, true)}
+      ${repsPicker(p, lastE && lastE.reps ? lastE.reps : null, true)}
+      ${extra.length ? `<div class="extra-sets">${extra.map(e => `<button class="entry" data-a="edit-entry" data-sid="${sid}" data-id="${e.id}"><span class="n">Set ${e.set}</span><span class="grow">${fmtTotal(dispW(e))} × ${e.reps}</span>✎</button>`).join('')}</div>` : ''}
+      <details class="more-log"><summary>Difficulty & notes</summary>
+        <h3>Difficulty</h3>${diffPicker(p)}
+        <h3>Quick notes</h3>${notePicker(p)}</details>
+      <div class="sub mach-label">Machines</div>
+      ${machineGrid(ses, ex, mId, 'strip')}
+      </div>`;
   }
   return `<div class="top"><a class="back" href="#/s/${sid}">‹ ${esc((tplById(ses.tid) || {}).name || 'Session')}</a><a class="back right" style="color:var(--mut);font-size:14px" href="#/set/e/${ex.id}">Edit</a></div>
-    <h1 style="margin-bottom:2px">${esc(ex.name)}</h1>
-    ${m ? `<div class="row wrap"><span class="selm">${esc(m.name)}</span>${m.photoId ? `<button class="photo-link" data-a="photo" data-id="${m.photoId}" data-testid="photo-link">📷 Photo</button>` : ''}</div>
+    <h1 class="ex-title">${esc(ex.name)}</h1>
+    ${m ? `<div class="row wrap"><span class="selm">${esc(m.name)}</span>${m.photoId ? `<button class="photo-link" data-a="photo" data-id="${m.photoId}" data-testid="photo-link">📷</button>` : ''}</div>
       ${machFine(m) ? `<div class="fine" data-testid="loc">${machFine(m)}</div>` : ''}` : ''}
-    ${cuesHTML(ex, m)}
-    ${m && m.caution ? `<div class="card" style="border-color:#7a5a12;background:#2a2210" data-testid="m-caution"><div class="row"><b>⚠️ Caution — ${esc(m.name)}</b>
-      <button class="chip sm right" data-a="m-unpin" data-m="${m.id}">Unpin</button></div><div style="margin-top:6px;font-size:17px">${esc(m.caution)}</div></div>` : ''}
-    ${headsUp(ses, ex)}${m ? adviceFor(ex, mId) : ''}
+    ${m ? '' : cuesHTML(ex, m)}
+    ${m && m.caution ? `<div class="fine mcaut-line" data-testid="m-caution">⚠️ ${esc(m.caution)}</div>` : ''}
+    ${m ? '' : headsUp(ses, ex)}${m ? adviceFor(ex, mId) : ''}
     ${body}`;
 }
 function viewConfirm(ses, ex) {
@@ -1169,8 +1184,8 @@ function viewConfirm(ses, ex) {
     <div class="sub">${esc(ex.name)} · ${esc(m ? m.name : '')}</div>
     <h1>Set ${pdn.setNo} done ✓</h1><div class="bigval" style="font-size:30px" data-testid="confirm-time">⏱ ${mmss(pdn.secs)}</div>
     <div class="sub" style="text-align:center;margin-bottom:6px">Confirm what you did</div>
-    <h3>Working weight</h3>${weightPicker(p)}
-    <h3>Reps</h3>${repsPicker(p, null)}
+    ${weightPicker(p, true)}
+    ${repsPicker(p, null, true)}
     <h3>Difficulty</h3>${diffPicker(p)}
     <h3>Quick notes</h3>${notePicker(p)}
     <div style="height:16px"></div><button class="btn pri" data-a="confirm-log" data-testid="confirm-log">Log set ${pdn.setNo}</button>
@@ -1180,19 +1195,19 @@ function setbarHTML() {
   if (!curEx || pendingDone) return '';
   const ses = sesById(curEx.sid); const ex = exById(curEx.exId); const d = P[draftKey(curEx.sid, curEx.exId)];
   if (!ses || !ex) return '';
-  const th = `<textarea class="thoughts" data-i="thoughts" rows="1" placeholder="💭 Thoughts (optional)" data-testid="thoughts">${esc((ses.thoughts || {})[ex.id] || '')}</textarea>`;
-  if (!d || !d.mId) return `<div class="setbar"><div class="inner">${th}</div></div>`;
-  if (ex.kind === 'cardio') return `<div class="setbar"><div class="inner">${th}<button class="setbtn all" data-a="log-cardio" data-testid="log-cardio">Log cardio</button></div></div>`;
+  const th = `<textarea class="thoughts thoughts-sm" data-i="thoughts" rows="1" placeholder="💭 Thoughts" data-testid="thoughts">${esc((ses.thoughts || {})[ex.id] || '')}</textarea>`;
+  if (!d || !d.mId) return `<div class="setbar setbar-sm"><div class="inner">${th}</div></div>`;
+  if (ex.kind === 'cardio') return `<div class="setbar setbar-sm"><div class="inner">${th}<button class="setbtn all" data-a="log-cardio" data-testid="log-cardio">Log cardio</button></div></div>`;
   const sets = setsOf(ses, ex.id, d.mId); const by = n => sets.find(s => s.set === n);
   const cur = `<span class="cur">${fmtW(round1(d.add + d.base))}×${d.reps}</span>`;
   const btn = n => { const e = by(n); return e ? `<button class="setbtn logged" data-a="edit-entry" data-sid="${ses.id}" data-id="${e.id}" data-testid="set-${n}">Set ${n} ✓<small>${fmtW(dispW(e))}×${e.reps}</small></button>`
     : `<button class="setbtn" data-a="log-set" data-n="${n}" data-testid="set-${n}">Set ${n}<small>${cur}</small></button>`; };
   const remaining = [1, 2, 3].filter(n => !by(n)); const nx = nextSetNo(ses, ex.id, d.mId);
-  const all = remaining.length === 3 ? `<button class="setbtn all" data-a="log-all" data-testid="all-sets">All 3 sets</button>`
-    : remaining.length ? `<button class="setbtn all" data-a="log-all" data-testid="all-sets">Remaining ${remaining.length}</button>`
-    : `<button class="setbtn all" data-a="log-extra" data-testid="extra-set">＋ Set ${nx}</button>`;
-  return `<div class="setbar"><div class="inner">${th}<div class="sets3">${btn(1)}${btn(2)}${btn(3)}</div>
-    <div class="acts"><button class="setbtn start" data-a="lock-start" data-testid="start-set">▶ Start set ${nx} <small style="margin-left:6px">${cur}</small></button>${all}</div></div></div>`;
+  const all = remaining.length === 3 ? `<button class="setbtn all" data-a="log-all" data-testid="all-sets">All 3</button>`
+    : remaining.length ? `<button class="setbtn all" data-a="log-all" data-testid="all-sets">Rest ${remaining.length}</button>`
+    : `<button class="setbtn all" data-a="log-extra" data-testid="extra-set">＋ ${nx}</button>`;
+  return `<div class="setbar setbar-sm"><div class="inner">${th}<div class="sets-row">${btn(1)}${btn(2)}${btn(3)}${all}
+    <button class="setbtn start sm" data-a="lock-start" data-testid="start-set" aria-label="Timed set">▶</button></div></div></div>`;
 }
 function updateSetbarLabel() { if (!curEx) return; const d = P[draftKey(curEx.sid, curEx.exId)]; if (!d || d.add == null) return; $$('.setbar .cur').forEach(c => c.textContent = `${fmtW(round1(d.add + d.base))}×${d.reps}`); }
 function logSets(nums, extra = {}) {
@@ -1308,14 +1323,37 @@ function viewHistDetail(sid) {
 function openEntrySheet(sid, id) {
   const s = sesById(sid); const e = s && s.entries.find(x => x.id === id); if (!e) return;
   const p = 'ed';
-  if (e.kind === 'set') { const base = round1(conv(e.base || 0, e.u || 'lb', unit())); P[p] = { base, noBase: e.base === null, add: round1(dispW(e) - base), reps: e.reps }; }
-  else P[p] = { dur: e.dur, dist: e.dist || 0, level: e.level || 0 };
+  if (e.kind === 'set') {
+    const base = round1(conv(e.base || 0, e.u || 'lb', unit()));
+    P[p] = { base, noBase: e.base === null, add: round1(dispW(e) - base), reps: e.reps, mId: e.mId };
+  } else P[p] = { dur: e.dur, dist: e.dist || 0, level: e.level || 0 };
   Object.assign(P[p], { diff: e.diff || 3, tags: (e.tags || []).slice(), sid, id });
-  openSheet(`<h2>${esc(exName(e.exId))} · ${e.kind === 'set' ? 'Set ' + e.set : 'Cardio'}</h2><div class="sub">${esc(machName(e.exId, e.mId))} · ${esc(fmtD(s.date))}</div>
-    ${e.kind === 'set' ? `<h3>Weight</h3>${weightPicker(p)}<h3>Reps</h3>${repsPicker(p, null)}` : cardioPicker(p)}
-    <h3>Difficulty</h3>${diffPicker(p)}<h3>Quick notes</h3>${notePicker(p)}
-    <div style="height:14px"></div><button class="btn pri" data-a="entry-save" data-testid="entry-save">Save changes</button>
-    <button class="btn bad" data-a="entry-del" data-testid="entry-del">Delete ${e.kind === 'set' ? 'set' : 'entry'}</button><button class="btn ghost" data-a="sheet-cancel">Cancel</button>`);
+  const siblings = e.kind === 'set'
+    ? s.entries.filter(x => x.kind === 'set' && x.exId === e.exId && x.mId === e.mId).sort((a, b) => a.set - b.set || a.ts - b.ts)
+    : [];
+  const idx = siblings.findIndex(x => x.id === e.id);
+  const prev = idx > 0 ? siblings[idx - 1] : null;
+  const next = idx >= 0 && idx < siblings.length - 1 ? siblings[idx + 1] : null;
+  const canAdd = e.kind === 'set' && !next;
+  const nav = e.kind === 'set' ? `<div class="entry-nav" data-testid="entry-nav">
+      <button class="chip sm" data-a="entry-prev" data-sid="${sid}" data-id="${e.id}" ${prev ? '' : 'disabled'} data-testid="entry-prev">← Prev</button>
+      <span class="sub">Set ${e.set}${siblings.length ? ` of ${Math.max(siblings.length, e.set)}` : ''}</span>
+      <button class="chip sm" data-a="entry-next" data-sid="${sid}" data-id="${e.id}" data-testid="entry-next">${canAdd ? '＋ Add →' : 'Next →'}</button>
+    </div>` : '';
+  openSheet(`<div class="entry-sheet" data-testid="entry-sheet">
+    <div class="entry-body">
+      <div class="entry-head"><h2>${esc(exName(e.exId))} · ${e.kind === 'set' ? 'Set ' + e.set : 'Cardio'}</h2>
+        <div class="sub">${esc(machName(e.exId, e.mId))}</div></div>
+      ${nav}
+      ${e.kind === 'set' ? `${weightPicker(p, true)}${repsPicker(p, null, true)}` : cardioPicker(p)}
+      <div class="diff-compact"><h3>Difficulty</h3>${diffPicker(p)}</div>
+      <details class="more-log"><summary>Notes</summary>${notePicker(p)}</details>
+    </div>
+    <div class="entry-actions" data-testid="entry-actions">
+      <button class="btn pri" data-a="entry-save" data-testid="entry-save">Save</button>
+      <button class="btn ghost" data-a="sheet-cancel" data-testid="entry-cancel">Cancel</button>
+      <button class="btn bad" data-a="entry-del" data-testid="entry-del">Delete</button>
+    </div></div>`);
   centerChips(false);
 }
 
@@ -1660,6 +1698,25 @@ document.addEventListener('click', async ev => {
       const d = P.ed; const s = sesById(d.sid); const idx = s.entries.findIndex(x => x.id === d.id); const [e] = s.entries.splice(idx, 1);
       markDeleted([e.id]); persist(); closeSheet(); render();
       return toast(e.kind === 'set' ? `Set ${e.set} deleted` : 'Entry deleted', () => { s.entries.splice(idx, 0, e); markDirty([e.id]); persist(); render(); });
+    }
+    case 'entry-prev': {
+      const s = sesById(ds.sid); const cur = s.entries.find(x => x.id === ds.id); if (!cur || cur.kind !== 'set') return;
+      const sibs = s.entries.filter(x => x.kind === 'set' && x.exId === cur.exId && x.mId === cur.mId).sort((a, b) => a.set - b.set || a.ts - b.ts);
+      const i = sibs.findIndex(x => x.id === cur.id); if (i <= 0) return;
+      return openEntrySheet(ds.sid, sibs[i - 1].id);
+    }
+    case 'entry-next': {
+      const s = sesById(ds.sid); const cur = s.entries.find(x => x.id === ds.id); if (!cur || cur.kind !== 'set') return;
+      const sibs = s.entries.filter(x => x.kind === 'set' && x.exId === cur.exId && x.mId === cur.mId).sort((a, b) => a.set - b.set || a.ts - b.ts);
+      const i = sibs.findIndex(x => x.id === cur.id);
+      if (i >= 0 && i < sibs.length - 1) return openEntrySheet(ds.sid, sibs[i + 1].id);
+      // Last set → add another using current sheet draft values
+      const d = P.ed; if (!d) return;
+      const n = nextSetNo(s, cur.exId, cur.mId);
+      const tot = round1(d.add + (d.noBase ? 0 : d.base));
+      const neu = { id: uid(), kind: 'set', exId: cur.exId, mId: cur.mId, set: n, w: tot, add: d.add, base: d.noBase ? null : d.base, u: unit(), reps: d.reps, diff: d.diff, tags: (d.tags || []).slice(), note: '', ts: nowTs() };
+      s.entries.push(neu); markDirty([neu.id]); persist();
+      return openEntrySheet(ds.sid, neu.id);
     }
     case 'del-session': {
       const s = sesById(ds.sid);
