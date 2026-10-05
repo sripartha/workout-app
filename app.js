@@ -1,7 +1,7 @@
 /* Lift Log — tap-only workout logger PWA. Plain JS, no build step, no dependencies. */
 'use strict';
 (function () {
-const APP_VERSION = '2.4.5';
+const APP_VERSION = '2.4.6';
 const LB_PER_KG = 2.20462;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -85,15 +85,24 @@ async function photoKeys() { if (DB.db) return DB.keys('photos'); return [...mem
 let S = null; // app state
 function persist() {
   const json = JSON.stringify(S); // write-through: every tap is saved immediately
-  if (DB.db) DB.put('kv', 'state', json).catch(() => { try { localStorage.setItem('liftlog', json); } catch (e) {} });
-  else try { localStorage.setItem('liftlog', json); } catch (e) {}
+  // Always mirror to localStorage so a failed/evicted IDB write cannot strand the only copy.
+  try { localStorage.setItem('liftlog', json); } catch (e) {}
+  if (DB.db) DB.put('kv', 'state', json).catch(err => console.warn('idb persist failed', err));
 }
 async function loadState() {
   await DB.open();
-  let raw = null;
-  if (DB.db) { try { raw = await DB.get('kv', 'state'); } catch (e) {} }
-  if (!raw) raw = localStorage.getItem('liftlog');
-  if (raw) { try { return migrate(JSON.parse(raw)); } catch (e) { console.warn('bad state', e); } }
+  let idbRaw = null, lsRaw = null;
+  if (DB.db) { try { idbRaw = await DB.get('kv', 'state'); } catch (e) {} }
+  try { lsRaw = localStorage.getItem('liftlog'); } catch (e) {}
+  const parse = raw => { try { return raw ? migrate(JSON.parse(raw)) : null; } catch (e) { console.warn('bad state', e); return null; } };
+  const a = parse(idbRaw), b = parse(lsRaw);
+  if (a && b) {
+    const na = (a.sessions || []).reduce((n, s) => n + (s.entries || []).length, 0);
+    const nb = (b.sessions || []).reduce((n, s) => n + (s.entries || []).length, 0);
+    // Prefer the copy that still has workout history if the other was clobbered.
+    return nb > na ? b : a;
+  }
+  if (a) return a; if (b) return b;
   return seed();
 }
 
@@ -531,12 +540,17 @@ async function saveImportSnaps(list) {
 async function refreshSnapCount() {
   try { importSnapCount = (await loadImportSnaps()).length; } catch (e) { importSnapCount = 0; }
 }
-async function saveImportSnapshot(label) {
+async function saveImportSnapshot(label, opts = {}) {
   const photos = {};
-  for (const k of await photoKeys()) {
-    try { const b = await photoGet(k); if (b) photos[k] = await blobToDataURL(b); } catch (e) {}
+  if (!opts.skipPhotos) {
+    for (const k of await photoKeys()) {
+      try { const b = await photoGet(k); if (b) photos[k] = await blobToDataURL(b); } catch (e) {}
+    }
   }
-  const snap = { id: uid(), at: Date.now(), label: label || 'before import', state: JSON.parse(JSON.stringify(S)), photos };
+  const snap = {
+    id: uid(), at: Date.now(), label: label || 'before import', kind: opts.kind || 'import',
+    state: JSON.parse(JSON.stringify(S)), photos
+  };
   const list = await loadImportSnaps();
   list.unshift(snap);
   await saveImportSnaps(list.slice(0, SNAP_MAX));
@@ -585,6 +599,12 @@ function applyCatalogFields(phoneM, fileM, ex) {
   else { phoneM.base = fileBase; phoneM.bu = fileM.bu || phoneM.bu || 'lb'; }
 }
 function mergeCatalog(fileState) {
+  // HARD GUARANTEE: catalog merge never clears workouts / sync / settings.
+  const keepSessions = S.sessions;
+  const keepAdvice = S.advice;
+  const keepSync = S.sync;
+  const keepSettings = S.settings;
+  const keepLastExport = S.lastExport;
   const incoming = migrate(JSON.parse(JSON.stringify(fileState))); // normalize bases/cautions without touching phone S yet
   let addedEx = 0, addedM = 0, updatedM = 0;
   const exIdMap = {}; // file exercise id -> phone exercise id
@@ -634,6 +654,11 @@ function mergeCatalog(fileState) {
     if (cur && !cur.t && incoming.schedule[d] && incoming.schedule[d].t) S.schedule[d] = Object.assign({}, incoming.schedule[d]);
   });
   S.setupDone = true;
+  S.sessions = keepSessions;
+  S.advice = keepAdvice;
+  S.sync = keepSync;
+  S.settings = keepSettings;
+  S.lastExport = keepLastExport;
   return { addedEx, addedM, updatedM };
 }
 function importModeSheet(obj) {
@@ -689,17 +714,28 @@ async function undoLastImport(opts = {}) {
   if (!list.length) return toast('Nothing to undo');
   const snap = list[0];
   const when = new Date(snap.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const isCatalog = snap.kind === 'catalog' || /catalog update/i.test(snap.label || '');
   if (!quiet) {
-    if (!await confirmSheet('Undo last import?', `Restores the phone to how it was ${when} (${snap.label || 'snapshot'}). Your current machines & workouts since then will be replaced by that snapshot.`, 'Undo import', 'bad')) return;
+    const msg = isCatalog
+      ? `Undoes the last machine-catalog update from ${when}. Your logged workouts are kept.`
+      : `Restores the phone to how it was ${when} (${snap.label || 'snapshot'}). Workouts logged after that snapshot would be replaced.`;
+    if (!await confirmSheet('Undo last import?', msg, 'Undo import', 'bad')) return;
   }
   list.shift();
-  await applyPhotos(snap.photos || {}, true);
-  S = migrate(snap.state); S.setupDone = !!S.setupDone || Object.keys(S.exercises).length > 0;
-  // If this snapshot was taken before an auto catalog apply, keep that version marked applied
-  // so the same catalog is not re-merged on the next launch / foreground.
+  if (isCatalog) {
+    // Catalog undo must NEVER wipe sessions logged after the auto-merge.
+    const keepSessions = S.sessions, keepAdvice = S.advice, keepSync = S.sync, keepSettings = S.settings, keepLastExport = S.lastExport;
+    if (Object.keys(snap.photos || {}).length) await applyPhotos(snap.photos, false);
+    S = migrate(snap.state);
+    S.sessions = keepSessions; S.advice = keepAdvice; S.sync = keepSync; S.settings = keepSettings; S.lastExport = keepLastExport;
+  } else {
+    await applyPhotos(snap.photos || {}, true);
+    S = migrate(snap.state);
+  }
+  S.setupDone = !!S.setupDone || Object.keys(S.exercises).length > 0;
   if (snap.catalogVersion) S.lastAppliedCatalogVersion = snap.catalogVersion;
   persist(); await saveImportSnaps(list); go('#/today');
-  if (!quiet) toast('Import undone');
+  if (!quiet) toast(isCatalog ? 'Catalog update undone (workouts kept)' : 'Import undone');
 }
 
 /* ---------------- Auto catalog sync (published catalog.json) ---------------- */
@@ -718,13 +754,17 @@ async function fetchPublishedCatalog() {
 async function applyPublishedCatalog(obj, { reason } = {}) {
   const ver = +obj.catalogVersion || 0;
   if (!ver) return false;
-  const snap = { label: reason === 'auto' ? 'before catalog update' : 'before update machines' };
-  await saveImportSnapshot(snap.label);
-  // Tag the newest snapshot with the version we are about to apply (for undo → no re-merge).
+  // Lightweight catalog snapshot (no photos) — undo keeps workouts (see undoLastImport).
+  await saveImportSnapshot(reason === 'auto' ? 'before catalog update' : 'before update machines', { kind: 'catalog', skipPhotos: true });
   const list = await loadImportSnaps();
   if (list[0]) { list[0].catalogVersion = ver; await saveImportSnaps(list); }
   await applyPhotos(obj.photos || {}, false);
+  const sessionCount = S.sessions.length;
+  const entryCount = S.sessions.reduce((n, s) => n + (s.entries || []).length, 0);
   const r = mergeCatalog(obj.state);
+  if (S.sessions !== undefined && (S.sessions.length < sessionCount || S.sessions.reduce((n, s) => n + (s.entries || []).length, 0) < entryCount)) {
+    console.error('catalog merge tried to drop sessions — blocked');
+  }
   S.lastAppliedCatalogVersion = ver;
   S.setupDone = true;
   persist(); await refreshSnapCount();
@@ -742,7 +782,8 @@ async function checkCatalogUpdate() {
     if (!ver || ver <= applied) return { skipped: true, ver, applied };
     const r = await applyPublishedCatalog(obj, { reason: 'auto' });
     render();
-    toast('Machines updated', () => { undoLastImport({ quiet: true }); });
+    // No Undo on the toast: a full-state undo after the user logs more sets would wipe those sets.
+    toast('Machines updated');
     return { updated: true, ver, ...r };
   } catch (e) {
     // Offline / 404 / parse error: skip silently
@@ -1460,7 +1501,7 @@ function viewSettings() {
   <button class="btn ghost" data-a="export-sessions-csv" data-testid="export-sessions-csv">Download sessions CSV (wrap-ups)</button>
   <button class="btn ghost" data-a="import-json" data-testid="import-json">Import machines or backup</button>
   ${importSnapCount ? `<button class="btn ghost" data-a="undo-import" data-testid="undo-import">Undo last import</button>
-  <div class="sub" style="margin:4px 0 10px">Restores the automatic safety snapshot taken just before your last import (${importSnapCount} saved).</div>` : ''}
+  <div class="sub" style="margin:4px 0 10px">Undoes the last import/catalog snapshot. Catalog undos keep your logged workouts (${importSnapCount} saved).</div>` : ''}
   <div class="sub" style="margin:10px 0">Machines update automatically from the published catalog when you open the app. Manual import is a fallback. Data is stored only on this phone (IndexedDB). Export a backup now and then.</div>
   <div class="sub" style="text-align:center;margin:20px 0">Lift Log v${APP_VERSION}</div>`;
 }
