@@ -260,7 +260,7 @@ function recentMachine(ex) {
 }
 
 function todaySetsHTML(ses, ex) {
-  const sets = setsOf(ses, ex.id); // all machines — never hide sets behind a machine filter
+  const sets = setsOf(ses, ex.id).slice().sort((a, b) => a.ts - b.ts || a.set - b.set); // chronological across machines
   if (!sets.length) return '';
   return `<div class="today-sets" data-testid="today-sets">
     <div class="row"><span class="sub mach-label grow">Today · ${sets.length} set${sets.length === 1 ? '' : 's'}</span>
@@ -271,7 +271,7 @@ function todaySetsHTML(ses, ex) {
   </div>`;
 }
 function todaySetsSiblings(ses, exId) {
-  return ses.entries.filter(x => x.kind === 'set' && x.exId === exId).sort((a, b) => a.set - b.set || a.ts - b.ts);
+  return ses.entries.filter(x => x.kind === 'set' && x.exId === exId).sort((a, b) => a.ts - b.ts || a.set - b.set);
 }
 function compactSets(ents) {
   const out = [];
@@ -1014,8 +1014,9 @@ function viewSession(sid) {
       const sets = setsOf(ses, exId);
       if (sets.length) {
         badge = `<span class="badge ${sets.length >= 3 ? 'done' : 'part'}">${sets.length >= 3 ? '✓ ' : ''}${sets.length} set${sets.length > 1 ? 's' : ''}</span>`;
-        const mNames = [...new Set(sets.map(e => machName(exId, e.mId)))];
-        sub = `Today: ${compactSets(sets)}${mNames.length ? ' · ' + mNames.map(esc).join(', ') : ''}`;
+        const ordered = sets.slice().sort((a, b) => a.ts - b.ts || a.set - b.set);
+        const mNames = [...new Set(ordered.map(e => machName(exId, e.mId)))];
+        sub = `Today: ${compactSets(ordered)}${mNames.length ? ' · ' + mNames.map(esc).join(', ') : ''}`;
       } else {
         const tg = repeatTarget(ses, exId);
         if (tg) sub = `Target: ${esc(machName(exId, tg.mId))} · ${compactSets(tg.ents)}`;
