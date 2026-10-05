@@ -10,7 +10,7 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 const FIX = path.join(__dirname, 'fixtures/versions');
-const VERSIONS = ['2.4.2', '2.4.3', '2.4.4', '2.4.5', '2.4.6', '2.4.7', '2.4.8', '2.4.9'];
+const VERSIONS = ['2.4.2', '2.4.3', '2.4.4', '2.4.5', '2.4.6', '2.4.7', '2.4.8', '2.4.9', '2.5.0'];
 const PORT = 8822;
 
 function serve() {
@@ -192,7 +192,7 @@ function snapshot(page) {
 
   // Confirm toast path: checkCatalogUpdate must not register undo (inspect toast call by applying catalog)
   const toastUndoSafe = await page.evaluate(async () => {
-    const src = await (await fetch('app.js?v=2.4.9', { cache: 'no-store' })).text();
+    const src = await (await fetch('app.js?v=2.5.0', { cache: 'no-store' })).text();
     const bad = /toast\(\s*['"]Machines updated['"]\s*,/.test(src);
     return { bad, hasGuard: /never pass an Undo callback/.test(src), hasSafeToast: /toast\(\s*['"]Machines updated['"]\s*\)/.test(src) };
   });

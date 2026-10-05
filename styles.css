@@ -266,3 +266,9 @@ details{margin:10px 0}summary{color:var(--mut);cursor:pointer;padding:10px 0;fon
 }
 .entry-actions .btn{width:auto;min-height:46px;font-size:15px;margin:0}
 .entry-actions .btn + .btn{margin-top:0}
+
+/* Today's sets list (v2.5.0) */
+.today-sets{margin:6px 0 10px;padding:8px 10px;border-radius:12px;background:rgba(51,194,127,.08);border:1px solid rgba(51,194,127,.35)}
+.today-sets .mach-label{margin:0;color:#9fe3c2}
+.today-sets .entry{margin:6px 0 0;background:var(--bg3)}
+.today-set .note{display:block;margin-top:2px}
