@@ -1,7 +1,7 @@
 /* Lift Log — tap-only workout logger PWA. Plain JS, no build step, no dependencies. */
 'use strict';
 (function () {
-const APP_VERSION = '2.4.4';
+const APP_VERSION = '2.4.5';
 const LB_PER_KG = 2.20462;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -906,11 +906,10 @@ function viewToday() {
   return `<div class="sub" style="margin-top:6px">${esc(fmtDLong(date))}</div>
     <div id="update-slot"></div>${reminder}
     ${hero}
-    ${others.map(s => `<a class="li" href="#/s/${s.id}"><div><div class="t">Continue ${esc((tplById(s.tid) || {}).name)}</div><div class="s">${s.entries.length} entries logged today</div></div><span class="badge part">open</span></a>`).join('')}
+    ${others.map(s => `<a class="li" href="#/s/${s.id}"><div><div class="t">Continue ${esc((tplById(s.tid) || {}).name)}</div><div class="s">${s.entries.length} entries logged today</div></div></a>`).join('')}
     <h3>This week</h3><div class="week">${week}</div>
     <h3>Other workouts</h3>
-    <div class="list">${S.templates.map(x => { const live = todays.find(s => s.tid === x.id); const badge = live ? 'Continue' : 'Open';
-      return `<button class="li" data-a="start" data-t="${x.id}" data-m="${sch.t === x.id ? sch.m : 'solo'}" data-testid="tpl-${x.id}"><div><div class="t">${esc(x.name)}</div><div class="s">${(n => n === 0 ? 'No exercises yet — add in Setup' : n === 1 ? '1 exercise' : n + ' exercises')(x.exIds.filter(id => exById(id) && !exById(id).archived).length)}</div></div><span class="badge${live ? ' part' : ''}">${badge}</span></button>`; }).join('')}</div>`;
+    <div class="list">${S.templates.map(x => `<button class="li" data-a="start" data-t="${x.id}" data-m="${sch.t === x.id ? sch.m : 'solo'}" data-testid="tpl-${x.id}"><div><div class="t">${esc(x.name)}</div><div class="s">${(n => n === 0 ? 'No exercises yet — add in Setup' : n === 1 ? '1 exercise' : n + ' exercises')(x.exIds.filter(id => exById(id) && !exById(id).archived).length)}</div></div></button>`).join('')}</div>`;
 }
 
 /* ---------------- View: Session ---------------- */
