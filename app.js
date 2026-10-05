@@ -1,7 +1,7 @@
 /* Lift Log — tap-only workout logger PWA. Plain JS, no build step, no dependencies. */
 'use strict';
 (function () {
-const APP_VERSION = '2.4.2';
+const APP_VERSION = '2.4.3';
 const LB_PER_KG = 2.20462;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -166,6 +166,43 @@ function setMachineBase(ex, m, b) {
 const fmtW = v => String(round1(v));
 const fmtTotal = v => v === 0 ? 'BW' : `${round1(v)} ${unit()}`;
 const snap = v => { const st = step(); return Math.max(0, round1(Math.round(v / st) * st)); };
+function machineForDraft(p) {
+  const d = P[p]; if (!d || !d.mId) return null;
+  if (p === 'me' && typeof ME !== 'undefined' && ME) return { id: ME.key, weightChips: ME.weightChips, chipBu: ME.chipBu || 'lb', name: ME.name };
+  if (curEx) return machById(exById(curEx.exId), d.mId);
+  // entry editor: draft key ed — machine from open sheet context not always available
+  return null;
+}
+function weightChipList(p) {
+  const m = machineForDraft(p);
+  if (m && Array.isArray(m.weightChips) && m.weightChips.length) {
+    const from = m.chipBu || 'lb';
+    return m.weightChips.map(c => round1(conv(+c, from, unit())));
+  }
+  const st = step(); const max = unit() === 'kg' ? 300 : 650; const out = [];
+  for (let i = 0; i * st <= max + 1e-9; i++) out.push(round1(i * st));
+  return out;
+}
+function snapToChips(v, chips) {
+  if (!chips || !chips.length) return snap(v);
+  let best = chips[0], bd = Math.abs(chips[0] - v);
+  chips.forEach(c => { const d = Math.abs(c - v); if (d < bd) { bd = d; best = c; } });
+  return best;
+}
+function stepChip(v, chips, dir) {
+  if (!chips || !chips.length) {
+    const st = step(); let n = snap(v + dir * st); if (n === v) n = round1(v + dir * st);
+    return clamp(n, 0, unit() === 'kg' ? 300 : 650);
+  }
+  // find nearest index, then move
+  let i = 0, bd = Infinity;
+  chips.forEach((c, idx) => { const d = Math.abs(c - v); if (d < bd) { bd = d; i = idx; } });
+  if (Math.abs(chips[i] - v) < 1e-6) i = clamp(i + dir, 0, chips.length - 1);
+  else i = dir > 0 ? chips.findIndex(c => c > v + 1e-9) : (() => { let j = -1; chips.forEach((c, idx) => { if (c < v - 1e-9) j = idx; }); return j; })();
+  if (i < 0) i = dir > 0 ? chips.length - 1 : 0;
+  return chips[clamp(i, 0, chips.length - 1)];
+}
+
 const sortedSessions = () => S.sessions.slice().sort((a, b) => b.date.localeCompare(a.date) || b.created - a.created);
 const setsOf = (ses, exId, mId) => ses.entries.filter(e => e.kind === 'set' && e.exId === exId && (!mId || e.mId === mId)).sort((a, b) => a.set - b.set);
 const cardioOf = (ses, exId) => ses.entries.filter(e => e.kind === 'cardio' && e.exId === exId);
@@ -245,11 +282,12 @@ function baseLineHTML(p) {
     <button class="chip sm baselock" data-a="unlock-base" data-m="${d.mId}" data-testid="unlock-base" aria-label="Unlock base to edit">Unlock</button></div>`;
 }
 function weightPicker(p) {
-  const st = step(); const max = unit() === 'kg' ? 300 : 650; const v = P[p].add; const chips = [];
-  for (let i = 0; i * st <= max + 1e-9; i++) { const xv = round1(i * st); chips.push(`<button class="chip ${Math.abs(xv - v) < 1e-6 ? 'on' : ''}" data-a="w" data-p="${p}" data-v="${xv}">${fmtW(xv)}</button>`); }
+  const v = P[p].add; const list = weightChipList(p);
+  const chips = list.map(xv => `<button class="chip ${Math.abs(xv - v) < 1e-6 ? 'on' : ''}" data-a="w" data-p="${p}" data-v="${xv}">${fmtW(xv)}</button>`);
+  const custom = !!(machineForDraft(p) && machineForDraft(p).weightChips);
   // Base line sits ABOVE working controls so it can never cover the chip strip (was intercepting taps).
   return `${baseLineHTML(p)}
-  <div class="wlabel" data-testid="working-label">Working weight <span class="bquiet">(plates / stack pin)</span></div>
+  <div class="wlabel" data-testid="working-label">Working weight <span class="bquiet">${custom ? '(cable stack plates)' : '(plates / stack pin)'}</span></div>
   <div class="row"><button class="step" data-a="wstep" data-p="${p}" data-d="-1" aria-label="minus">−</button>
   <div class="grow bigval" id="wv-${p}" data-testid="weight-value">${weightBig(p)}</div>
   <button class="step" data-a="wstep" data-p="${p}" data-d="1" aria-label="plus">+</button></div>
@@ -521,11 +559,13 @@ function findMachByIncoming(phoneMs, fileM) {
   return phoneMs.find(m => normName(m.name) === n) || null;
 }
 function cloneMachine(m) {
-  return {
+  const out = {
     id: m.id, name: m.name, base: m.base === null || m.base === '' ? null : +m.base || 0,
     bu: m.bu || 'lb', gym: m.gym || '', loc: m.loc || '', cues: m.cues || '', caution: m.caution || '',
     photoId: m.photoId || undefined, start: m.start || undefined
   };
+  if (Array.isArray(m.weightChips) && m.weightChips.length) { out.weightChips = m.weightChips.slice(); out.chipBu = m.chipBu || 'lb'; }
+  return out;
 }
 function applyCatalogFields(phoneM, fileM, ex) {
   phoneM.name = fileM.name;
@@ -534,9 +574,13 @@ function applyCatalogFields(phoneM, fileM, ex) {
   phoneM.cues = fileM.cues || '';
   phoneM.caution = fileM.caution || '';
   if (fileM.photoId) phoneM.photoId = fileM.photoId;
+  if (Array.isArray(fileM.weightChips) && fileM.weightChips.length) {
+    phoneM.weightChips = fileM.weightChips.slice();
+    phoneM.chipBu = fileM.chipBu || 'lb';
+  }
   // BASE RULE: file "not set" (null) keeps the phone value; a number from the file wins.
   const fileBase = (fileM.base === null || fileM.base === '') ? null : +fileM.base;
-  if (fileBase === null || Number.isNaN(fileBase)) return; // keep phone
+  if (fileBase === null || Number.isNaN(fileBase)) return; // keep phone base
   if (phoneM.base === null) setMachineBase(ex, phoneM, fileBase);
   else { phoneM.base = fileBase; phoneM.bu = fileM.bu || phoneM.bu || 'lb'; }
 }
@@ -973,7 +1017,11 @@ function initDraft(ses, ex, mId) {
     d.base = baseOf(m); d.noBase = noBase(m);
     const today = setsOf(ses, ex.id, mId); const l = lastFor(ex.id, mId, ses.id); const tg = repeatTarget(ses, ex.id);
     const ref = today[today.length - 1] || (tg && tg.mId === mId && tg.ents[tg.ents.length - 1]) || lastEnt(l);
-    d.add = ref ? snap(Math.max(0, (ref.base === null ? round1(conv(ref.add || 0, ref.u || 'lb', unit())) : dispW(ref)) - d.base)) : 0;
+    {
+      const raw = ref ? Math.max(0, (ref.base === null ? round1(conv(ref.add || 0, ref.u || 'lb', unit())) : dispW(ref)) - d.base) : 0;
+      const mchips = m && m.weightChips && m.weightChips.length ? m.weightChips.map(c => round1(conv(+c, m.chipBu || 'lb', unit()))) : null;
+      d.add = mchips ? snapToChips(raw, mchips) : snap(raw);
+    }
     d.reps = today.length ? today[today.length - 1].reps : S.settings.defaultReps;
   }
   P[p] = d; return p;
@@ -1546,7 +1594,7 @@ document.addEventListener('click', async ev => {
     case 'new-mach': meReturn = location.hash; ME = null; return go(`#/set/m/${ds.ex}/new`);
     case 'edit-mach': meReturn = location.hash; ME = null; return go(`#/set/m/${ds.ex}/${ds.m}`);
     case 'w': pk.add = +ds.v; return updateWeightUI(p);
-    case 'wstep': { const st = step(); let v = snap(pk.add + (+ds.d) * st); if (v === pk.add) v = round1(v + (+ds.d) * st); pk.add = clamp(v, 0, unit() === 'kg' ? 300 : 650); return updateWeightUI(p); }
+    case 'wstep': { pk.add = stepChip(pk.add, weightChipList(p), +ds.d); return updateWeightUI(p); }
     case 'rstep': pk.reps = clamp(pk.reps + (+ds.d), 1, 50); return updateRepsUI(p);
     case 'rset': pk.reps = +ds.v; updateRepsUI(p); el.remove(); return;
     case 'dset': pk.diff = +ds.v; return updateDiffUI(p);
