@@ -1,7 +1,7 @@
 /* Lift Log — tap-only workout logger PWA. Plain JS, no build step, no dependencies. */
 'use strict';
 (function () {
-const APP_VERSION = '2.3.0';
+const APP_VERSION = '2.4.0';
 const LB_PER_KG = 2.20462;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -133,6 +133,7 @@ function migrate(s) {
   });
   s.sync = Object.assign({ url: '', token: '', dirty: [], deleted: [], last: null, err: '', lastAttempt: null, sesHash: {} }, s.sync || {});
   s.sync.sesHash = s.sync.sesHash || {};
+  if (s.lastAppliedCatalogVersion == null) s.lastAppliedCatalogVersion = 0;
   return s;
 }
 
@@ -332,8 +333,8 @@ function confirmSheet(title, msg, ok = 'Delete', cls = 'bad') {
 }
 let toastTimer = null, toastUndo = null;
 function toast(msg, undo) {
-  const t = $('#toast'); toastUndo = undo || null;
-  t.innerHTML = `<span>${esc(msg)}</span>${undo ? '<button data-a="toast-undo">UNDO</button>' : ''}`;
+  const t = $('#toast'); if (!t) return; toastUndo = undo || null;
+  t.innerHTML = `<span data-testid="toast-msg">${esc(msg)}</span>${undo ? '<button data-a="toast-undo" data-testid="toast-undo">UNDO</button>' : ''}`;
   t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; toastUndo = null; }, undo ? 5000 : 2200);
 }
 async function openPhoto(photoId) {
@@ -606,6 +607,7 @@ async function importJSON(file) {
   if (mode === 'merge') {
     await applyPhotos(obj.photos || {}, false);
     const r = mergeCatalog(obj.state);
+    if (obj.catalogVersion) S.lastAppliedCatalogVersion = +obj.catalogVersion;
     persist(); await refreshSnapCount(); go('#/today');
     toast(`Updated machines (+${r.addedM} new, ${r.updatedM} updated)`);
     return;
@@ -618,17 +620,73 @@ async function importJSON(file) {
   persist(); await refreshSnapCount(); go('#/today');
   toast(`Restored ${(obj.state.sessions || []).length} sessions`);
 }
-async function undoLastImport() {
+async function undoLastImport(opts = {}) {
+  const quiet = !!opts.quiet;
   const list = await loadImportSnaps();
   if (!list.length) return toast('Nothing to undo');
   const snap = list[0];
   const when = new Date(snap.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-  if (!await confirmSheet('Undo last import?', `Restores the phone to how it was ${when} (${snap.label || 'snapshot'}). Your current machines & workouts since then will be replaced by that snapshot.`, 'Undo import', 'bad')) return;
+  if (!quiet) {
+    if (!await confirmSheet('Undo last import?', `Restores the phone to how it was ${when} (${snap.label || 'snapshot'}). Your current machines & workouts since then will be replaced by that snapshot.`, 'Undo import', 'bad')) return;
+  }
   list.shift();
   await applyPhotos(snap.photos || {}, true);
   S = migrate(snap.state); S.setupDone = !!S.setupDone || Object.keys(S.exercises).length > 0;
+  // If this snapshot was taken before an auto catalog apply, keep that version marked applied
+  // so the same catalog is not re-merged on the next launch / foreground.
+  if (snap.catalogVersion) S.lastAppliedCatalogVersion = snap.catalogVersion;
   persist(); await saveImportSnaps(list); go('#/today');
-  toast('Import undone');
+  if (!quiet) toast('Import undone');
+}
+
+/* ---------------- Auto catalog sync (published catalog.json) ---------------- */
+let catalogCheckInFlight = false;
+const CATALOG_URL = 'catalog.json';
+
+async function fetchPublishedCatalog() {
+  const url = `${CATALOG_URL}?t=${Date.now()}`;
+  const res = await fetch(url, { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } });
+  if (!res.ok) throw new Error('catalog HTTP ' + res.status);
+  const obj = await res.json();
+  if (!obj || obj.app !== 'liftlog' || !obj.state) throw new Error('not a liftlog catalog');
+  return obj;
+}
+
+async function applyPublishedCatalog(obj, { reason } = {}) {
+  const ver = +obj.catalogVersion || 0;
+  if (!ver) return false;
+  const snap = { label: reason === 'auto' ? 'before catalog update' : 'before update machines' };
+  await saveImportSnapshot(snap.label);
+  // Tag the newest snapshot with the version we are about to apply (for undo → no re-merge).
+  const list = await loadImportSnaps();
+  if (list[0]) { list[0].catalogVersion = ver; await saveImportSnaps(list); }
+  await applyPhotos(obj.photos || {}, false);
+  const r = mergeCatalog(obj.state);
+  S.lastAppliedCatalogVersion = ver;
+  S.setupDone = true;
+  persist(); await refreshSnapCount();
+  return r;
+}
+
+async function checkCatalogUpdate() {
+  if (catalogCheckInFlight) return null;
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return null;
+  catalogCheckInFlight = true;
+  try {
+    const obj = await fetchPublishedCatalog();
+    const ver = +obj.catalogVersion || 0;
+    const applied = +S.lastAppliedCatalogVersion || 0;
+    if (!ver || ver <= applied) return { skipped: true, ver, applied };
+    const r = await applyPublishedCatalog(obj, { reason: 'auto' });
+    render();
+    toast('Machines updated', () => { undoLastImport({ quiet: true }); });
+    return { updated: true, ver, ...r };
+  } catch (e) {
+    // Offline / 404 / parse error: skip silently
+    return { error: String(e && e.message || e) };
+  } finally {
+    catalogCheckInFlight = false;
+  }
 }
 async function importAdvice(file) {
   if (!file) return;
@@ -708,7 +766,10 @@ window.addEventListener('online', () => scheduleSync(500));
 window.addEventListener('pagehide', () => { if (S) persist(); });
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') { if (S) { persist(); if (S.sync.dirty.length || S.sync.deleted.length || pendingSessions().ups.length) syncNow({ hidden: true }); } }
-  else if (wakeWanted) setWake(true); // the OS drops wake locks when the page is hidden
+  else {
+    if (wakeWanted) setWake(true); // the OS drops wake locks when the page is hidden
+    if (S) checkCatalogUpdate();
+  }
 });
 
 /* ---------------- Screen wake lock ---------------- */
@@ -1335,7 +1396,7 @@ function viewSettings() {
   <button class="btn ghost" data-a="import-json" data-testid="import-json">Import machines or backup</button>
   ${importSnapCount ? `<button class="btn ghost" data-a="undo-import" data-testid="undo-import">Undo last import</button>
   <div class="sub" style="margin:4px 0 10px">Restores the automatic safety snapshot taken just before your last import (${importSnapCount} saved).</div>` : ''}
-  <div class="sub" style="margin:10px 0">Data is stored only on this phone (IndexedDB). Prefer <b>Update machines</b> when importing a catalog so your workouts stay. Export a backup now and then.</div>
+  <div class="sub" style="margin:10px 0">Machines update automatically from the published catalog when you open the app. Manual import is a fallback. Data is stored only on this phone (IndexedDB). Export a backup now and then.</div>
   <button class="btn bad" data-a="reset-all">Erase all data</button>
   <div class="sub" style="text-align:center;margin:20px 0">Lift Log v${APP_VERSION}</div>`;
 }
@@ -1630,13 +1691,16 @@ function registerSW() {
   }).catch(e => console.warn('SW registration failed', e));
 }
 (async function boot() {
-  S = await loadState(); persist();
+  S = await loadState();
   S.sessions.forEach(s => s.entries.forEach(e => { if (e.ts > lastTs) lastTs = e.ts; }));
+  await refreshSnapCount();
+  // Auto-apply published catalog before first paint when possible (first-run setup + updates).
+  await checkCatalogUpdate();
+  persist();
   render(); registerSW();
   if (navigator.storage && navigator.storage.persist) navigator.storage.persisted().then(p => p || navigator.storage.persist()).catch(() => {});
   scheduleSync(1500);
-  await refreshSnapCount();
   window.__liftlog = { state: () => S, persist, syncNow, version: APP_VERSION, wake: () => ({ wanted: wakeWanted, held: !!wakeSentinel }),
-    mergeCatalog, saveImportSnapshot, loadImportSnaps, refreshSnapCount };
+    mergeCatalog, saveImportSnapshot, loadImportSnaps, refreshSnapCount, checkCatalogUpdate, undoLastImport };
 })();
 })();
