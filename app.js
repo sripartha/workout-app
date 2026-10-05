@@ -1,7 +1,7 @@
 /* Lift Log — tap-only workout logger PWA. Plain JS, no build step, no dependencies. */
 'use strict';
 (function () {
-const APP_VERSION = '2.2.0';
+const APP_VERSION = '2.3.0';
 const LB_PER_KG = 2.20462;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -451,19 +451,184 @@ async function exportJSON(how) {
   S.lastExport = Date.now(); persist(); render();
   toast(r === 'shared' ? 'Shared' : 'Backup downloaded');
 }
+const SNAP_KEY = 'import-snaps';
+const SNAP_MAX = 3;
+let memSnaps = []; // fallback when IndexedDB is unavailable
+let importSnapCount = 0;
+const normName = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+async function loadImportSnaps() {
+  if (DB.db) {
+    try { const v = await DB.get('kv', SNAP_KEY); if (Array.isArray(v)) return v; } catch (e) {}
+  }
+  return memSnaps.slice();
+}
+async function saveImportSnaps(list) {
+  importSnapCount = list.length;
+  if (DB.db) {
+    try { await DB.put('kv', SNAP_KEY, list); memSnaps = []; return; } catch (e) { console.warn('snap save failed', e); }
+  }
+  memSnaps = list;
+}
+async function refreshSnapCount() {
+  try { importSnapCount = (await loadImportSnaps()).length; } catch (e) { importSnapCount = 0; }
+}
+async function saveImportSnapshot(label) {
+  const photos = {};
+  for (const k of await photoKeys()) {
+    try { const b = await photoGet(k); if (b) photos[k] = await blobToDataURL(b); } catch (e) {}
+  }
+  const snap = { id: uid(), at: Date.now(), label: label || 'before import', state: JSON.parse(JSON.stringify(S)), photos };
+  const list = await loadImportSnaps();
+  list.unshift(snap);
+  await saveImportSnaps(list.slice(0, SNAP_MAX));
+}
+async function applyPhotos(map, clearFirst) {
+  if (clearFirst) { try { if (DB.db) await DB.clear('photos'); else memPhotos.clear(); } catch (e) {} }
+  for (const [k, d] of Object.entries(map || {})) {
+    try { await photoPut(k, dataURLToBlob(d)); } catch (e) { console.warn('photo import failed', k); }
+  }
+}
+function findExByIncoming(phoneEx, fileEx) {
+  if (phoneEx[fileEx.id]) return phoneEx[fileEx.id];
+  const n = normName(fileEx.name);
+  return Object.values(phoneEx).find(e => normName(e.name) === n) || null;
+}
+function findMachByIncoming(phoneMs, fileM) {
+  const byId = phoneMs.find(m => m.id === fileM.id);
+  if (byId) return byId;
+  const n = normName(fileM.name);
+  return phoneMs.find(m => normName(m.name) === n) || null;
+}
+function cloneMachine(m) {
+  return {
+    id: m.id, name: m.name, base: m.base === null || m.base === '' ? null : +m.base || 0,
+    bu: m.bu || 'lb', gym: m.gym || '', loc: m.loc || '', cues: m.cues || '', caution: m.caution || '',
+    photoId: m.photoId || undefined, start: m.start || undefined
+  };
+}
+function applyCatalogFields(phoneM, fileM, ex) {
+  phoneM.name = fileM.name;
+  phoneM.gym = fileM.gym || '';
+  phoneM.loc = fileM.loc || '';
+  phoneM.cues = fileM.cues || '';
+  phoneM.caution = fileM.caution || '';
+  if (fileM.photoId) phoneM.photoId = fileM.photoId;
+  // BASE RULE: file "not set" (null) keeps the phone value; a number from the file wins.
+  const fileBase = (fileM.base === null || fileM.base === '') ? null : +fileM.base;
+  if (fileBase === null || Number.isNaN(fileBase)) return; // keep phone
+  if (phoneM.base === null) setMachineBase(ex, phoneM, fileBase);
+  else { phoneM.base = fileBase; phoneM.bu = fileM.bu || phoneM.bu || 'lb'; }
+}
+function mergeCatalog(fileState) {
+  const incoming = migrate(JSON.parse(JSON.stringify(fileState))); // normalize bases/cautions without touching phone S yet
+  let addedEx = 0, addedM = 0, updatedM = 0;
+  const exIdMap = {}; // file exercise id -> phone exercise id
+  Object.values(incoming.exercises || {}).forEach(fileEx => {
+    let phoneEx = findExByIncoming(S.exercises, fileEx);
+    if (!phoneEx) {
+      phoneEx = {
+        id: fileEx.id, name: fileEx.name, kind: fileEx.kind || 'strength',
+        machines: (fileEx.machines || []).map(cloneMachine),
+        pinned: fileEx.pinned || '', cues: fileEx.cues || ''
+      };
+      S.exercises[phoneEx.id] = phoneEx;
+      addedEx++; addedM += phoneEx.machines.length;
+      exIdMap[fileEx.id] = phoneEx.id;
+      return;
+    }
+    exIdMap[fileEx.id] = phoneEx.id;
+    // update exercise catalog fields (name/cues/pinned) but never wipe a phone pinned caution with empty
+    phoneEx.name = fileEx.name || phoneEx.name;
+    if (fileEx.kind) phoneEx.kind = fileEx.kind;
+    if (fileEx.cues) phoneEx.cues = fileEx.cues;
+    if (fileEx.pinned) phoneEx.pinned = fileEx.pinned;
+    (fileEx.machines || []).forEach(fileM => {
+      const phoneM = findMachByIncoming(phoneEx.machines, fileM);
+      if (!phoneM) {
+        phoneEx.machines.push(cloneMachine(fileM));
+        addedM++;
+        return;
+      }
+      applyCatalogFields(phoneM, fileM, phoneEx);
+      updatedM++;
+    });
+  });
+  // Templates: add new templates; for existing ones, append missing exercise ids (never remove)
+  (incoming.templates || []).forEach(ft => {
+    let pt = S.templates.find(t => t.id === ft.id) || S.templates.find(t => normName(t.name) === normName(ft.name));
+    const mappedIds = (ft.exIds || []).map(eid => exIdMap[eid] || eid).filter(eid => S.exercises[eid]);
+    if (!pt) {
+      S.templates.push({ id: ft.id, name: ft.name, kind: ft.kind || 'strength', exIds: mappedIds });
+      return;
+    }
+    mappedIds.forEach(eid => { if (!pt.exIds.includes(eid)) pt.exIds.push(eid); });
+  });
+  // Schedule: fill empty days from the file, never overwrite a phone assignment
+  Object.keys(incoming.schedule || {}).forEach(d => {
+    const cur = S.schedule[d];
+    if (cur && !cur.t && incoming.schedule[d] && incoming.schedule[d].t) S.schedule[d] = Object.assign({}, incoming.schedule[d]);
+  });
+  S.setupDone = true;
+  return { addedEx, addedM, updatedM };
+}
+function importModeSheet(obj) {
+  const st = obj.state || {};
+  const nSes = (st.sessions || []).length;
+  const nEx = Object.keys(st.exercises || {}).length;
+  const nM = Object.values(st.exercises || {}).reduce((a, e) => a + (e.machines || []).length, 0);
+  const nPh = Object.keys(obj.photos || {}).length;
+  const when = obj.exportedAt ? obj.exportedAt.slice(0, 10) : '?';
+  const looksCatalog = nSes === 0;
+  return new Promise(res => {
+    openSheet(`<h2>Import file</h2>
+      <p class="sub">${esc(when)} · ${nEx} exercises · ${nM} machines · ${nSes} session${nSes === 1 ? '' : 's'} · ${nPh} photo${nPh === 1 ? '' : 's'}.
+      ${looksCatalog ? ' Looks like a machine catalog (no workouts).' : ' This file includes workout history.'}</p>
+      <button class="btn pri" data-a="import-choose" data-mode="merge" data-testid="import-merge">Update machines (keeps your workouts)</button>
+      <div class="sub" style="margin:6px 0 14px">Recommended. Adds &amp; updates machines, locations, bases and photos. Never deletes your logged sets.</div>
+      <button class="btn ghost" data-a="import-choose" data-mode="full" data-testid="import-full">Full restore (replaces everything)</button>
+      <div class="sub" style="margin:6px 0 14px">Wipes workouts, settings and photos on this phone, then loads the file.</div>
+      <button class="btn ghost" data-a="sheet-cancel" data-testid="import-cancel">Cancel</button>`);
+    sheetResolve = res;
+  });
+}
 async function importJSON(file) {
   if (!file) return;
   let obj; try { obj = JSON.parse(await file.text()); } catch (e) { return toast('Not a valid JSON file'); }
   if (!obj || obj.app !== 'liftlog' || !obj.state) return toast('Not a Lift Log backup');
-  const n = (obj.state.sessions || []).length;
-  if (!await confirmSheet('Restore backup?', `This replaces everything on this phone with the backup from ${obj.exportedAt ? obj.exportedAt.slice(0, 10) : '?'} (${n} sessions, ${Object.keys(obj.photos || {}).length} photos).`, 'Replace and restore', 'pri')) return;
-  // photos first, so the restored state never points at photos that are not written yet
-  try { if (DB.db) await DB.clear('photos'); else memPhotos.clear(); } catch (e) {}
-  for (const [k, d] of Object.entries(obj.photos || {})) { try { await photoPut(k, dataURLToBlob(d)); } catch (e) { console.warn('photo import failed', k); } }
+  const mode = await importModeSheet(obj);
+  if (!mode) return;
+  if (mode === 'full') {
+    const n = (obj.state.sessions || []).length;
+    if (!await confirmSheet('Full restore?', `This replaces everything on this phone with the backup from ${obj.exportedAt ? obj.exportedAt.slice(0, 10) : '?'} (${n} sessions, ${Object.keys(obj.photos || {}).length} photos). A safety snapshot is saved first so you can undo.`, 'Replace and restore', 'bad')) return;
+  }
+  await saveImportSnapshot(mode === 'merge' ? 'before update machines' : 'before full restore');
+  if (mode === 'merge') {
+    await applyPhotos(obj.photos || {}, false);
+    const r = mergeCatalog(obj.state);
+    persist(); await refreshSnapCount(); go('#/today');
+    toast(`Updated machines (+${r.addedM} new, ${r.updatedM} updated)`);
+    return;
+  }
+  // Full restore — photos first so state never points at missing photos
+  await applyPhotos(obj.photos || {}, true);
   const keepSync = S.sync;
   S = migrate(obj.state); S.setupDone = true;
   if (!S.sync.token && keepSync.token && (!S.sync.url || S.sync.url === keepSync.url)) { S.sync.url = keepSync.url; S.sync.token = keepSync.token; }
-  persist(); go('#/today'); toast(`Restored ${n} sessions`);
+  persist(); await refreshSnapCount(); go('#/today');
+  toast(`Restored ${(obj.state.sessions || []).length} sessions`);
+}
+async function undoLastImport() {
+  const list = await loadImportSnaps();
+  if (!list.length) return toast('Nothing to undo');
+  const snap = list[0];
+  const when = new Date(snap.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  if (!await confirmSheet('Undo last import?', `Restores the phone to how it was ${when} (${snap.label || 'snapshot'}). Your current machines & workouts since then will be replaced by that snapshot.`, 'Undo import', 'bad')) return;
+  list.shift();
+  await applyPhotos(snap.photos || {}, true);
+  S = migrate(snap.state); S.setupDone = !!S.setupDone || Object.keys(S.exercises).length > 0;
+  persist(); await saveImportSnaps(list); go('#/today');
+  toast('Import undone');
 }
 async function importAdvice(file) {
   if (!file) return;
@@ -1167,8 +1332,10 @@ function viewSettings() {
   ${backupButtons()}
   <button class="btn ghost" data-a="export-csv" data-testid="export-csv">Download CSV (sets & cardio)</button>
   <button class="btn ghost" data-a="export-sessions-csv" data-testid="export-sessions-csv">Download sessions CSV (wrap-ups)</button>
-  <button class="btn ghost" data-a="import-json" data-testid="import-json">Import JSON backup</button>
-  <div class="sub" style="margin:10px 0">Data is stored only on this phone (IndexedDB). Export a backup now and then.</div>
+  <button class="btn ghost" data-a="import-json" data-testid="import-json">Import machines or backup</button>
+  ${importSnapCount ? `<button class="btn ghost" data-a="undo-import" data-testid="undo-import">Undo last import</button>
+  <div class="sub" style="margin:4px 0 10px">Restores the automatic safety snapshot taken just before your last import (${importSnapCount} saved).</div>` : ''}
+  <div class="sub" style="margin:10px 0">Data is stored only on this phone (IndexedDB). Prefer <b>Update machines</b> when importing a catalog so your workouts stay. Export a backup now and then.</div>
   <button class="btn bad" data-a="reset-all">Erase all data</button>
   <div class="sub" style="text-align:center;margin:20px 0">Lift Log v${APP_VERSION}</div>`;
 }
@@ -1339,6 +1506,8 @@ document.addEventListener('click', async ev => {
     case 'export-sessions-csv': download(new Blob([buildSessionsCSV()], { type: 'text/csv' }), `liftlog-sessions-${todayStr()}.csv`); return toast('Sessions CSV downloaded');
     case 'export-csv': download(new Blob([buildCSV()], { type: 'text/csv' }), `liftlog-${todayStr()}.csv`); return toast('CSV downloaded');
     case 'import-json': return pickFile('application/json,.json').then(importJSON);
+    case 'import-choose': return closeSheet(ds.mode);
+    case 'undo-import': return undoLastImport();
     case 'import-advice': return pickFile('application/json,.json').then(importAdvice);
     case 'set-unit': S.settings.unit = ds.v; Object.keys(P).forEach(k => delete P[k]); persist(); return render();
     case 'set-step': if (unit() === 'kg') S.settings.stepKg = +ds.v; else S.settings.stepLb = +ds.v; persist(); return render();
@@ -1466,6 +1635,8 @@ function registerSW() {
   render(); registerSW();
   if (navigator.storage && navigator.storage.persist) navigator.storage.persisted().then(p => p || navigator.storage.persist()).catch(() => {});
   scheduleSync(1500);
-  window.__liftlog = { state: () => S, syncNow, version: APP_VERSION, wake: () => ({ wanted: wakeWanted, held: !!wakeSentinel }) };
+  await refreshSnapCount();
+  window.__liftlog = { state: () => S, persist, syncNow, version: APP_VERSION, wake: () => ({ wanted: wakeWanted, held: !!wakeSentinel }),
+    mergeCatalog, saveImportSnapshot, loadImportSnaps, refreshSnapCount };
 })();
 })();
