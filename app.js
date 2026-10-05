@@ -1,7 +1,7 @@
 /* Lift Log — tap-only workout logger PWA. Plain JS, no build step, no dependencies. */
 'use strict';
 (function () {
-const APP_VERSION = '2.4.6';
+const APP_VERSION = '2.4.7';
 const LB_PER_KG = 2.20462;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -24,7 +24,7 @@ const DIFF_SHORT = { 1: 'ridiculously easy', 2: 'easier than average', 3: 'as ex
 const WRAP_DIFF = { 1: 'Very easy', 2: 'Easy', 3: 'As expected', 4: 'Hard', 5: 'Brutal' };
 const WRAP_ENERGY = { 1: 'Exhausted', 2: 'Low', 3: 'Normal', 4: 'Good', 5: 'Great' };
 const WRAP_CHIPS = ['great session', 'felt strong', 'PR today', 'tired', 'bad sleep', 'short on time', 'shoulder sore', 'skipped exercises'];
-const NOTE_CHIPS = ['form check', 'increase next time', 'decrease next time', 'pain / tweak', 'low energy', 'great pump'];
+const NOTE_CHIPS = ['form check', 'increase next time', 'decrease next time', 'pain / tweak', 'low energy', 'great pump', 'required spotting'];
 const BASE_CHIPS_LB = [0, 10, 15, 20, 25, 30, 35, 45], BASE_CHIPS_KG = [0, 5, 7.5, 10, 12.5, 15, 20];
 // Suggestions shown as tap-to-add chips in first-run setup (nothing is pre-loaded).
 const SUGGEST = {
