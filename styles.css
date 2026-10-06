@@ -287,3 +287,8 @@ details{margin:10px 0}summary{color:var(--mut);cursor:pointer;padding:10px 0;fon
 .past-pill{background:rgba(255,170,60,.18);color:#ffcf8a}
 .mpick{min-height:34px;padding:4px 12px;font-size:14px}
 .move-list{max-height:52vh;overflow:auto;margin-bottom:6px}
+/* 2.5.2 update bar + version row */
+.updbar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--sab) + var(--tabh) + 10px);z-index:60;border:0;border-radius:999px;padding:8px 16px;min-height:38px;
+  background:var(--blue);color:#001;font-weight:700;font-size:14px;box-shadow:0 4px 16px rgba(0,0,0,.45);cursor:pointer;white-space:nowrap}
+body.focus .updbar{bottom:auto;top:calc(env(safe-area-inset-top,0px) + 6px)}
+.verrow{margin:8px 0 4px;padding:8px 10px;border:1px solid var(--line);border-radius:12px;background:var(--bg2);font-size:15px}

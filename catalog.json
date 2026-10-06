@@ -801,7 +801,7 @@
   "templates": [
    {
     "id": "push",
-    "name": "Push Day",
+    "name": "Push",
     "kind": "strength",
     "exIds": [
      "chest-press",
@@ -816,7 +816,7 @@
    },
    {
     "id": "pull",
-    "name": "Pull Day",
+    "name": "Pull",
     "kind": "strength",
     "exIds": [
      "lat-pulldown",
@@ -829,7 +829,7 @@
    },
    {
     "id": "legs",
-    "name": "Leg Day",
+    "name": "Legs",
     "kind": "strength",
     "exIds": [
      "hack-squat",

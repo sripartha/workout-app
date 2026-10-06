@@ -1,7 +1,7 @@
 /* Lift Log — tap-only workout logger PWA. Plain JS, no build step, no dependencies. */
 'use strict';
 (function () {
-const APP_VERSION = '2.5.1';
+const APP_VERSION = '2.5.2';
 const LB_PER_KG = 2.20462;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -128,12 +128,13 @@ function seed() {
     v: 2, created: Date.now(), setupDone: false, lastExport: null,
     settings: { unit: 'lb', stepLb: 5, stepKg: 2.5, defaultReps: 12, distUnit: 'mi', homeGym: '' },
     exercises: {},
-    templates: [T('push', 'Push Day'), T('pull', 'Pull Day'), T('legs', 'Leg Day'), T('core', 'Core'), T('cardio', 'Cardio', 'cardio')],
+    templates: [T('push', 'Push'), T('pull', 'Pull'), T('legs', 'Legs'), T('core', 'Core'), T('cardio', 'Cardio', 'cardio')],
     schedule: { 0: { t: null, m: 'solo' }, 1: { t: 'push', m: 'coach' }, 2: { t: 'legs', m: 'solo' }, 3: { t: 'pull', m: 'coach' },
       4: { t: 'push', m: 'solo' }, 5: { t: 'legs', m: 'coach' }, 6: { t: 'pull', m: 'solo' } },
     sessions: [], advice: []
   });
 }
+const TPL_RENAME = { 'push day': 'Push', 'pull day': 'Pull', 'leg day': 'Legs', 'legs day': 'Legs' };
 const rpeToDiff = r => r <= 2 ? 1 : r <= 4 ? 2 : r <= 7 ? 3 : r <= 8 ? 4 : 5;
 function migrate(s) {
   s.v = 2; s.created = s.created || Date.now();
@@ -157,6 +158,14 @@ function migrate(s) {
   });
   s.sync = Object.assign({ url: '', token: '', dirty: [], deleted: [], last: null, err: '', lastAttempt: null, sesHash: {} }, s.sync || {});
   s.sync.sesHash = s.sync.sesHash || {};
+  // 2.5.2: template names "Push Day"/"Pull Day"/"Leg Day" → "Push"/"Pull"/"Legs" (name only; ids, schedule and sessions unchanged). One time.
+  s.migrated = s.migrated || {};
+  if (!s.migrated.tplNames252) {
+    const renamed = new Set();
+    s.templates.forEach(t => { const n = TPL_RENAME[String(t.name || '').trim().toLowerCase()]; if (n) { t.name = n; renamed.add(t.id); } });
+    if (renamed.size) { const d = new Set(s.sync.dirty); s.sessions.forEach(x => { if (renamed.has(x.tid)) x.entries.forEach(e => d.add(e.id)); }); s.sync.dirty = [...d]; } // sheet rows pick up the new name
+    s.migrated.tplNames252 = true;
+  }
   if (s.lastAppliedCatalogVersion == null) s.lastAppliedCatalogVersion = 0;
   if (s.lastAppVersion == null) s.lastAppVersion = '';
   return s;
@@ -239,8 +248,8 @@ const knownGyms = () => { const g = new Set(); if (homeGym()) g.add(homeGym()); 
 const nextSetNo = (ses, exId, mId) => { const have = setsOf(ses, exId, mId).map(s => s.set); const f = [1, 2, 3].find(n => !have.includes(n)); return f || Math.max(...have) + 1; };
 
 /* ---------------- Sync change tracking ---------------- */
-function markDirty(ids) { const d = new Set(S.sync.dirty); ids.forEach(i => d.add(i)); S.sync.dirty = [...d]; S.sync.deleted = S.sync.deleted.filter(i => !d.has(i)); scheduleSync(); }
-function markDeleted(ids) { const x = new Set(S.sync.deleted); ids.forEach(i => x.add(i)); S.sync.deleted = [...x]; S.sync.dirty = S.sync.dirty.filter(i => !x.has(i)); scheduleSync(); }
+function markDirty(ids) { if (syncing) ids.forEach(i => syncRedirty.add(i)); const d = new Set(S.sync.dirty); ids.forEach(i => d.add(i)); S.sync.dirty = [...d]; S.sync.deleted = S.sync.deleted.filter(i => !d.has(i)); scheduleSync(); }
+function markDeleted(ids) { if (syncing) ids.forEach(i => syncRedirty.add(i)); const x = new Set(S.sync.deleted); ids.forEach(i => x.add(i)); S.sync.deleted = [...x]; S.sync.dirty = S.sync.dirty.filter(i => !x.has(i)); scheduleSync(); }
 const markSessionDirty = ses => markDirty(ses.entries.map(e => e.id));
 const markExDirty = exId => markDirty(S.sessions.flatMap(s => s.entries.filter(e => e.exId === exId).map(e => e.id)));
 
@@ -514,7 +523,8 @@ function entryRow(s, e) {
   return { date: s.date, template: (tplById(s.tid) || {}).name || '', mode: s.mode, exercise: exName(e.exId), machine: machName(e.exId, e.mId), gym: m ? m.gym : '', type: e.kind,
     set: e.set || '', weight: e.kind === 'set' ? (e.base === null ? '' : e.w) : '', added_weight: e.kind === 'set' ? e.add : '', base_weight: e.kind === 'set' ? (e.base === null ? '' : (e.base || 0)) : '', unit: e.kind === 'set' ? (e.u || 'lb') : '',
     reps: e.reps || '', difficulty: e.diff || '', set_seconds: e.secs || '', duration_min: e.dur || '', distance: e.dist || '', distance_unit: e.kind === 'cardio' ? (e.du || '') : '', level: e.level || '',
-    tags: (e.tags || []).join('; '), note: e.note || '', thoughts: (s.thoughts || {})[e.exId] || '' };
+    tags: (e.tags || []).join('; '), note: e.note || '', thoughts: (s.thoughts || {})[e.exId] || '',
+    session_id: s.id, exercise_id: e.exId, machine_id: e.mId || '', template_id: s.tid || '', ts: e.ts || '' }; // ids: sheet only (restore), not in CSV
 }
 function buildCSV() {
   const q = v => { v = v == null ? '' : String(v); return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; };
@@ -543,7 +553,7 @@ const SESSION_COLS = ['date', 'template', 'mode', 'duration_min', 'exercises', '
 function sessionRow(s) {
   const sm = sessionSummary(s), w = s.wrap || {};
   return { date: s.date, template: (tplById(s.tid) || {}).name || '', mode: s.mode, duration_min: sm.durMin, exercises: sm.exercises, sets: sm.sets, volume: sm.volume, unit: sm.unit,
-    session_difficulty: w.diff || '', energy: w.energy || '', chips: (w.tags || []).join('; '), thoughts: w.thoughts || '', session_id: s.id };
+    session_difficulty: w.diff || '', energy: w.energy || '', chips: (w.tags || []).join('; '), thoughts: w.thoughts || '', session_id: s.id, template_id: s.tid || '' };
 }
 const rowSessions = () => S.sessions.filter(s => s.entries.length || s.wrap);
 function buildSessionsCSV() {
@@ -882,15 +892,23 @@ function needsBackup() {
 }
 
 /* ---------------- Sync to Google Sheet (Apps Script web app) ---------------- */
-let syncing = false, syncTimer = null, retryDelay = 30000;
+let syncing = false, syncTimer = null, retryDelay = 30000, syncAgain = false;
+const syncRedirty = new Set(); // ids changed while a push was in flight: keep them queued
+/* Push now (e.g. wrap-up saved). Offline → stays queued and goes out when the phone is back online. */
+function syncSoon() {
+  if (!S.sync.url || !S.sync.token) return false;
+  if (!navigator.onLine) { S.sync.err = 'offline — queued'; persist(); return false; }
+  syncNow(); return true;
+}
 function scheduleSync(delay = 4000) {
   if (!S.sync.url || !S.sync.token) return;
   clearTimeout(syncTimer); syncTimer = setTimeout(() => syncNow(), delay);
 }
 async function syncNow(opts = {}) {
-  const sy = S.sync; if (!sy.url || !sy.token || syncing) return;
+  const sy = S.sync; if (!sy.url || !sy.token) return;
+  if (syncing) { syncAgain = true; return; }
   if (!navigator.onLine && !opts.force) { sy.err = 'offline — will retry'; return; }
-  syncing = true;
+  syncing = true; syncAgain = false; syncRedirty.clear();
   const dirty = sy.dirty.slice(), deleted = sy.deleted.slice();
   const index = {}; S.sessions.forEach(s => s.entries.forEach(e => { index[e.id] = [s, e]; }));
   const upserts = dirty.filter(id => index[id]).map(id => Object.assign({ id }, entryRow(index[id][0], index[id][1])));
@@ -907,21 +925,102 @@ async function syncNow(opts = {}) {
     const out = await res.json();
     if (!out || !out.ok) throw new Error((out && out.error) || 'Sync rejected');
     const d = new Set(dirty), x = new Set(deleted);
-    sy.dirty = sy.dirty.filter(i => !d.has(i)); sy.deleted = sy.deleted.filter(i => !x.has(i));
+    sy.dirty = sy.dirty.filter(i => !d.has(i) || syncRedirty.has(i)); sy.deleted = sy.deleted.filter(i => !x.has(i) || syncRedirty.has(i));
     // only mark session rows synced when the script understood them (an older Code.gs without a Sessions tab ignores them)
     if (typeof out.sessionsUpserted === 'number') { sy.note = ''; ps.ups.forEach(u => { sy.sesHash[u.row.session_id] = u.k; }); ps.dels.forEach(id => { delete sy.sesHash[id]; }); }
     else if (ps.ups.length || ps.dels.length) sy.note = 'Update Code.gs to sync the Sessions tab';
     sy.last = Date.now(); sy.err = ''; retryDelay = 30000;
     if (Array.isArray(out.advice)) mergeAdvice(out.advice, 'sheet');
     persist();
-    if (sy.dirty.length || sy.deleted.length) scheduleSync(1000);
+    const more = typeof out.sessionsUpserted === 'number' && (pendingSessions().ups.length || pendingSessions().dels.length);
+    if (sy.dirty.length || sy.deleted.length || more) scheduleSync(1000);
   } catch (e) {
     sy.err = (e && e.name === 'AbortError') ? 'timed out' : String(e && e.message || e);
     persist(); clearTimeout(syncTimer); syncTimer = setTimeout(() => syncNow(), retryDelay); retryDelay = Math.min(retryDelay * 2, 600000);
   } finally {
-    syncing = false;
+    syncing = false; syncRedirty.clear();
+    if (syncAgain) { syncAgain = false; scheduleSync(300); }
     const el = $('#sync-status'); if (el) el.innerHTML = syncStatusHTML();
   }
+}
+/* ---- Restore from Google Sheet: pull all rows (needs Code.gs ≥2.5.2) and MERGE by id. Local data always wins. ---- */
+async function fetchSheetRows() {
+  const sy = S.sync; let out = null;
+  try {
+    const res = await fetch(sy.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, redirect: 'follow', body: JSON.stringify({ token: sy.token, app: 'liftlog', action: 'export' }) });
+    if (res.ok) out = await res.json();
+  } catch (e) { out = null; }
+  if (!out || !Array.isArray(out.sets)) {
+    const res = await fetch(sy.url + (sy.url.includes('?') ? '&' : '?') + 'action=export&token=' + encodeURIComponent(sy.token), { redirect: 'follow' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    out = await res.json();
+  }
+  if (!out || !out.ok) throw new Error((out && out.error) || 'Sheet said no');
+  if (!Array.isArray(out.sets)) throw new Error('Update Code.gs in your sheet (needs the Restore version)');
+  return out;
+}
+function mergeSheetRows(data) {
+  const r = { sets: 0, sessions: 0, wraps: 0, kept: 0, skipped: 0 };
+  const have = new Set(); S.sessions.forEach(s => s.entries.forEach(e => have.add(e.id)));
+  const gone = new Set(S.sync.deleted || []);
+  const str = v => v == null ? '' : String(v).trim();
+  const num = v => v === '' || v == null || isNaN(+v) ? null : +v;
+  const day = v => { const d = str(v).slice(0, 10); return /^\d{4}-\d\d-\d\d$/.test(d) ? d : null; };
+  const split = v => str(v) ? str(v).split(/;\s*/).filter(Boolean) : [];
+  const tplFor = (id, name) => {
+    if (id && tplById(id)) return id;
+    const nm = TPL_RENAME[str(name).toLowerCase()] || str(name); if (!nm) return null;
+    let t = S.templates.find(x => normName(x.name) === normName(nm));
+    if (!t) { t = { id: id || uid(), name: nm, kind: 'strength', exIds: [] }; S.templates.push(t); }
+    return t.id;
+  };
+  const exFor = row => {
+    if (row.exercise_id && exById(str(row.exercise_id))) return exById(str(row.exercise_id));
+    const nm = str(row.exercise) || 'Exercise';
+    const all = Object.values(S.exercises).filter(e => normName(e.name) === normName(nm));
+    return all.find(e => !e.archived) || all[0] || createExercise(nm, row.type === 'cardio' ? 'cardio' : 'strength');
+  };
+  const machFor = (ex, row) => {
+    if (row.machine_id && machById(ex, str(row.machine_id))) return machById(ex, str(row.machine_id));
+    const nm = str(row.machine);
+    let m = nm ? ex.machines.find(x => normName(x.name) === normName(nm)) : ex.machines[0];
+    if (!m) { m = { id: str(row.machine_id) || uid(), name: nm || 'Machine', base: str(row.base_weight) === '' ? null : +row.base_weight || 0, bu: str(row.unit) || 'lb', gym: str(row.gym), loc: '', cues: '', caution: '' }; ex.machines.push(m); }
+    return m;
+  };
+  const created = new Set();
+  const sessionFor = (sid, date, tid, mode) => {
+    let s = sid && sesById(sid);
+    if (!s) s = S.sessions.find(x => x.date === date && x.tid === tid);
+    if (!s) { s = { id: sid || uid(), date, tid, mode: mode === 'coach' ? 'coach' : 'solo', repeatFrom: null, exIds: [], entries: [], thoughts: {}, created: Date.now() }; S.sessions.push(s); created.add(s.id); }
+    return s;
+  };
+  (data.sets || []).forEach((row, i) => {
+    const id = str(row.id); const date = day(row.date);
+    if (!id || !date) { r.skipped++; return; }
+    if (have.has(id) || gone.has(id)) { r.kept++; return; }
+    const ex = exFor(row); const m = machFor(ex, row);
+    const s = sessionFor(str(row.session_id), date, tplFor(str(row.template_id), row.template), str(row.mode));
+    const kind = row.type === 'cardio' ? 'cardio' : 'set';
+    const e = { id, kind, exId: ex.id, mId: m.id, diff: num(row.difficulty), tags: split(row.tags), note: str(row.note), ts: num(row.ts) || (pd(date).getTime() + 12 * 36e5 + i) };
+    if (kind === 'set') {
+      const base = str(row.base_weight) === '' ? null : +row.base_weight || 0;
+      const add = num(row.added_weight) != null ? num(row.added_weight) : (num(row.weight) || 0) - (base || 0);
+      Object.assign(e, { set: num(row.set) || nextSetNo(s, ex.id, m.id), add, base, w: base === null ? add : (num(row.weight) != null ? num(row.weight) : add + base), u: str(row.unit) || 'lb', reps: num(row.reps) || 0 });
+      if (num(row.set_seconds)) e.secs = num(row.set_seconds);
+    } else Object.assign(e, { dur: num(row.duration_min) || 0, dist: num(row.distance) || 0, du: str(row.distance_unit) || S.settings.distUnit, level: num(row.level) || 0 });
+    s.entries.push(e); have.add(id); r.sets++;
+    if (!s.exIds.includes(ex.id)) s.exIds.push(ex.id);
+    if (str(row.thoughts) && !(s.thoughts || {})[ex.id]) s.thoughts[ex.id] = str(row.thoughts);
+  });
+  (data.sessions || []).forEach(row => {
+    const sid = str(row.session_id); const date = day(row.date); if (!sid || !date) return;
+    const hasWrap = row.session_difficulty !== '' && row.session_difficulty != null || row.energy !== '' && row.energy != null || str(row.chips) || str(row.thoughts);
+    let s = sesById(sid) || S.sessions.find(x => x.date === date && x.tid === tplFor(str(row.template_id), row.template));
+    if (!s) { if (!hasWrap) return; s = sessionFor(sid, date, tplFor(str(row.template_id), row.template), str(row.mode)); }
+    if (hasWrap && !s.wrap) { s.wrap = { diff: num(row.session_difficulty) || 3, energy: num(row.energy) || 3, tags: split(row.chips), thoughts: str(row.thoughts), durMin: num(row.duration_min), ts: Date.now() }; r.wraps++; }
+  });
+  r.sessions = created.size;
+  return r;
 }
 function syncStatusHTML() {
   const sy = S.sync; if (!sy.url || !sy.token) return 'Not set up';
@@ -935,6 +1034,7 @@ document.addEventListener('visibilitychange', () => {
   else {
     if (wakeWanted) setWake(true); // the OS drops wake locks when the page is hidden
     if (S) checkCatalogUpdate();
+    checkForUpdate();
   }
 });
 
@@ -1633,6 +1733,8 @@ function viewSettings() {
   const st = S.settings; const tplOpts = cur => `<option value="">Rest</option>${S.templates.map(t => `<option value="${t.id}" ${t.id === cur ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}`;
   const days = [1, 2, 3, 4, 5, 6, 0];
   return `<h1>Setup</h1><div class="sub">Typing is only needed here. At the gym everything is taps.</div>
+  <div class="row verrow" data-testid="app-version"><span class="grow">Lift Log <b>v${APP_VERSION}</b>${updateReady ? ' · <span style="color:var(--acc)">update ready</span>' : ''}</span>
+    <button class="chip sm" data-a="check-update" data-testid="check-update">Check for update</button></div>
   <div style="height:10px"></div><a class="btn" href="#/setup">✨ Run setup wizard (bulk add exercises & machines)</a>
   <h2>Units</h2>${seg('set-unit', [['lb', 'Pounds (lb)'], ['kg', 'Kilograms (kg)']], st.unit)}
   <h3>Weight step</h3><div class="chips">${(st.unit === 'kg' ? [1, 2.5, 5] : [2.5, 5, 10]).map(v => `<button class="chip ${v === step() ? 'on' : ''}" data-a="set-step" data-v="${v}">${v} ${st.unit}</button>`).join('')}</div>
@@ -1652,6 +1754,8 @@ function viewSettings() {
   <div style="height:8px"></div><input class="field" id="sync-token" placeholder="Secret token" value="${esc(S.sync.token)}" autocomplete="off" autocapitalize="off" spellcheck="false" type="password">
   <div class="sub" id="sync-status" style="margin:8px 0" data-testid="sync-status">${syncStatusHTML()}</div>
   <div class="row"><button class="btn sm" data-a="sync-save">Save</button><button class="btn sm" data-a="sync-now" data-testid="sync-now">Sync now</button><button class="btn sm ghost" data-a="sync-full">Re-send all</button></div>
+  <button class="btn" style="margin-top:8px" data-a="sync-restore" data-testid="sync-restore">Restore from Google Sheet</button>
+  <div class="fine">Adds sets & sessions from your sheet that aren't on this phone. Never removes or changes anything here.</div>
   <h2>Advice from your assistant</h2>
   <div class="sub">${S.advice.filter(a => !a.dismissed).length} active advice notes · ${S.advice.filter(a => a.dismissed).length} dismissed</div>
   <div style="height:8px"></div><button class="btn" data-a="import-advice" data-testid="import-advice">Import advice (JSON)</button>
@@ -1746,7 +1850,8 @@ document.addEventListener('click', async ev => {
     case 'ask-ok': return closeSheet(($('#ask-input').value || '').trim());
     case 'confirm-ok': return closeSheet(true);
     case 'toast-undo': if (toastUndo) toastUndo(); $('#toast').hidden = true; toastUndo = null; return;
-    case 'update-reload': return location.reload();
+    case 'update-reload': return applyUpdate();
+    case 'check-update': { if (!swReg) return toast('Updates need the installed app'); toast('Checking…'); await checkForUpdate(); return toast(updateReady ? 'Update ready — tap the bar to reload' : `Up to date (v${APP_VERSION})`); }
     case 'start': return startSession(ds.t, ds.m);
     case 'pick-date': workDate = ds.d >= todayStr() ? null : ds.d; closeSheet(null); if (route()[0] !== 'today') return go('#/today'); return render();
     case 'date-today': workDate = null; closeSheet(null); if (route()[0] !== 'today') return go('#/today'); return render();
@@ -1783,7 +1888,8 @@ document.addEventListener('click', async ev => {
     case 'wtag': { const v = ds.v; W.tags = W.tags.includes(v) ? W.tags.filter(t => t !== v) : W.tags.concat(v); el.classList.toggle('on', W.tags.includes(v)); return; }
     case 'wdur': W.durMin = clamp(W.durMin + (+ds.d), 0, 600); { const d = $('[data-testid=wrap-duration]'); if (d) d.textContent = `${W.durMin} min`; } return;
     case 'wrap-save': { const s = sesById(W.sid); s.wrap = { diff: W.diff, energy: W.energy, tags: W.tags.slice(), thoughts: (W.thoughts || '').trim(), durMin: W.durMin, ts: Date.now() };
-      persist(); scheduleSync(500); const ret = wrapReturn; W = null; toast(ret === '#/today' ? 'Saved. Nice work!' : 'Wrap-up saved'); return go(ret); }
+      markSessionDirty(s); persist(); const sent = syncSoon(); const ret = wrapReturn; W = null;
+      toast((ret === '#/today' ? 'Saved. Nice work!' : 'Wrap-up saved') + (S.sync.url && S.sync.token ? (sent ? ' · syncing' : ' · will sync when online') : '')); return go(ret); }
     case 'wrap-skip': { const ret = wrapReturn; W = null; toast(ret === '#/today' ? 'Saved. Nice work!' : 'No changes'); return go(ret); }
     case 'mode': { const s = sesById(ds.sid); s.mode = ds.v; markSessionDirty(s); persist(); return render(); }
     case 'add-ex-session': {
@@ -1946,6 +2052,15 @@ document.addEventListener('click', async ev => {
       ex.archived = true; S.templates.forEach(t => { t.exIds = t.exIds.filter(x => x !== ex.id); }); persist(); return go('#/set/ex'); }
     case 'sync-save': S.sync.url = ($('#sync-url').value || '').trim(); S.sync.token = ($('#sync-token').value || '').trim(); S.sync.err = ''; persist(); toast('Sync settings saved'); render(); return syncNow();
     case 'sync-now': if (!S.sync.url) return toast('Add the sync URL first'); toast('Syncing…'); await syncNow({ force: true }); render(); return toast(S.sync.err ? 'Sync failed — will retry' : 'Synced');
+    case 'sync-restore': {
+      const u = ($('#sync-url') && $('#sync-url').value || S.sync.url || '').trim(), tk = ($('#sync-token') && $('#sync-token').value || S.sync.token || '').trim();
+      if (!u || !tk) return toast('Enter the sheet URL and token first');
+      if (!await confirmSheet('Restore from Google Sheet?', "Adds any sets and sessions from your sheet that aren't on this phone. Nothing on this phone is removed or changed.", 'Restore', 'pri')) return;
+      S.sync.url = u; S.sync.token = tk; persist(); toast('Reading your sheet…');
+      try { const data = await fetchSheetRows(); const r = mergeSheetRows(data); await persist(); render();
+        return toast(`Restored ${r.sets} entr${r.sets === 1 ? 'y' : 'ies'} in ${r.sessions} new session${r.sessions === 1 ? '' : 's'}${r.wraps ? ` · ${r.wraps} wrap-up${r.wraps === 1 ? '' : 's'}` : ''} · ${r.kept} already here`); }
+      catch (e) { return toast('Restore failed: ' + (e && e.message || e)); }
+    }
     case 'sync-full': markDirty(S.sessions.flatMap(s => s.entries.map(e => e.id))); persist(); render(); return syncNow({ force: true });
   }
 });
@@ -2007,16 +2122,36 @@ document.addEventListener('change', ev => {
 });
 
 /* ---------------- Service worker & boot ---------------- */
-let updateReady = false;
-function showUpdate() { const slot = $('#update-slot'); if (slot && !slot.innerHTML) slot.innerHTML = '<div class="banner" data-a="update-reload">New version ready — tap to reload</div>'; }
+/* Updates without clearing Safari: check on launch + every return to foreground; a waiting worker shows a small bar;
+   tapping it saves state, activates the new worker and reloads. Data lives in IndexedDB/localStorage, untouched by updates. */
+let updateReady = false, swReg = null, swReloading = false, swTapped = false;
+function showUpdate() {
+  updateReady = true;
+  if ($('#update-bar')) return;
+  const b = document.createElement('button'); b.id = 'update-bar'; b.className = 'updbar'; b.dataset.a = 'update-reload'; b.dataset.testid = 'update-bar';
+  b.textContent = '⬆ Update ready — tap to reload'; document.body.appendChild(b);
+}
+function checkForUpdate() { if (swReg) return swReg.update().then(() => { if (swReg.waiting && navigator.serviceWorker.controller) showUpdate(); }).catch(() => {}); return Promise.resolve(); }
+function watchWorker(reg) {
+  if (reg.waiting && navigator.serviceWorker.controller) showUpdate();
+  reg.addEventListener('updatefound', () => {
+    const nw = reg.installing; if (!nw) return;
+    nw.addEventListener('statechange', () => { if (nw.state === 'installed' && navigator.serviceWorker.controller) showUpdate(); });
+  });
+}
 function registerSW() {
   if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
-  navigator.serviceWorker.register('sw.js').then(reg => {
-    reg.addEventListener('updatefound', () => {
-      const nw = reg.installing; if (!nw) return;
-      nw.addEventListener('statechange', () => { if (nw.state === 'installed' && navigator.serviceWorker.controller) { updateReady = true; showUpdate(); } });
-    });
-  }).catch(e => console.warn('SW registration failed', e));
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => { swReg = reg; watchWorker(reg); checkForUpdate(); })
+    .catch(e => console.warn('SW registration failed', e));
+  // Only reload when the user asked (never yank the screen mid-set).
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (swTapped && !swReloading) { swReloading = true; location.reload(); } });
+}
+async function applyUpdate() {
+  swTapped = true;
+  try { await persist(); } catch (e) {}
+  const w = swReg && swReg.waiting;
+  if (w) { w.postMessage({ type: 'SKIP_WAITING' }); setTimeout(() => { if (!swReloading) { swReloading = true; location.reload(); } }, 3000); }
+  else { swReloading = true; location.reload(); }
 }
 async function maybeSafetyBackup(reason) {
   // Cheap local snapshot (no photos) before anything that might reshuffle catalog/state.

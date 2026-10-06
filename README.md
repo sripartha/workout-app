@@ -31,7 +31,7 @@ Only these need hosting: `index.html app.js styles.css sw.js manifest.webmanifes
       optional photo, **coaching cues**, and a **starting weight (+ optional reps)** that becomes the first "last time".
       Exercise-level cues too. Everything stays editable in Setup › Exercises.
 1. **Today**: shows today's planned template from the weekly schedule (Mon Push w/ coach, Tue Legs solo, Wed Pull w/ coach,
-   Thu Push solo, Fri Legs w/ coach, Sat Pull solo, Sun rest). On solo days it offers **Repeat Monday's Push Day** etc.,
+   Thu Push solo, Fri Legs w/ coach, Sat Pull solo, Sun rest). On solo days it offers **Repeat Monday's Push** etc.,
    which loads that session's exercises in order with its machine + weight×reps as targets. A **backup reminder** appears when the
    last export or successful sync was more than 7 days ago.
 2. **Session**: exercises of the template; coach/solo toggle; ✓ badges for done exercises.
@@ -125,6 +125,8 @@ After changing app files, bump `VERSION` in `sw.js` so phones pick up the update
 Paths are relative, so the app works from a sub-path like GitHub Pages' `/<repo>/`.
 
 ## Optional: automatic sync to a Google Sheet
+
+Short, phone-friendly steps: **[sync/SETUP.md](sync/SETUP.md)**. Setup › **Restore from Google Sheet** merges every sheet row back into the phone by id (never removes local data).
 
 Lets your assistant read workouts without manual sending. Offline-first: every change is queued on the phone and pushed
 automatically on app open, when the phone comes back online, a few seconds after logging, after **Done for today** and when the
