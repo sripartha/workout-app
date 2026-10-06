@@ -1,7 +1,7 @@
 /* Lift Log — tap-only workout logger PWA. Plain JS, no build step, no dependencies. */
 'use strict';
 (function () {
-const APP_VERSION = '2.5.0';
+const APP_VERSION = '2.5.1';
 const LB_PER_KG = 2.20462;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -15,6 +15,12 @@ const DOW = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', '
 const fmtD = s => pd(s).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 const fmtDLong = s => pd(s).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 const dowName = s => DOW[pd(s).getDay()];
+/* Day being logged on the Today screen. In-memory only (never persisted), so every app launch starts on today. */
+let workDate = null;
+const activeDate = () => (workDate && workDate < todayStr() ? workDate : todayStr());
+const daysAgo = n => { const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() - n); return ymd(d); };
+const dayWord = date => date === todayStr() ? 'Today' : date === daysAgo(1) ? 'Yesterday' : fmtD(date);
+const dayWordLc = date => date === todayStr() ? 'today' : date === daysAgo(1) ? 'yesterday' : 'on ' + fmtD(date);
 const round1 = v => Math.round(v * 10) / 10;
 const mmss = s => `${Math.floor(s / 60)}:${pad(Math.floor(s % 60))}`;
 const DAY_MS = 864e5;
@@ -239,9 +245,13 @@ const markSessionDirty = ses => markDirty(ses.entries.map(e => e.id));
 const markExDirty = exId => markDirty(S.sessions.flatMap(s => s.entries.filter(e => e.exId === exId).map(e => e.id)));
 
 /* Last result for exercise (+machine). Includes the machine's setup "starting weight" when there is no history yet. */
-function lastFor(exId, mId, exclude) {
+function lastFor(exId, mId, exclude, upto) {
+  // Ordered by SESSION DATE (not entry time), so backdated sets slot in correctly.
+  // When viewing a session, only that day or earlier counts as "last".
+  if (upto == null && exclude) { const xs = sesById(exclude); if (xs) upto = xs.date; }
   for (const s of sortedSessions()) {
     if (s.id === exclude) continue;
+    if (upto && s.date > upto) continue;
     const ents = s.entries.filter(e => e.exId === exId && (!mId || e.mId === mId));
     if (ents.length) return { ses: s, date: s.date, ents: ents.slice().sort((a, b) => (a.set || 0) - (b.set || 0) || a.ts - b.ts), seed: false };
   }
@@ -251,9 +261,9 @@ function lastFor(exId, mId, exclude) {
 }
 const lastEnt = l => l && l.ents[l.ents.length - 1];
 /* Machine used most recently for this exercise (any session), else the most recently set-up starting weight. */
-function recentMachine(ex) {
+function recentMachine(ex, upto) {
   let best = null;
-  S.sessions.forEach(s => s.entries.forEach(e => { if (e.exId === ex.id && machById(ex, e.mId)) { const k = s.date + '|' + String(e.ts).padStart(15, '0'); if (!best || k > best.k) best = { k, mId: e.mId }; } }));
+  S.sessions.forEach(s => (upto && s.date > upto) ? null : s.entries.forEach(e => { if (e.exId === ex.id && machById(ex, e.mId)) { const k = s.date + '|' + String(e.ts).padStart(15, '0'); if (!best || k > best.k) best = { k, mId: e.mId }; } }));
   if (best) return machById(ex, best.mId);
   const seeded = ex.machines.filter(m => m.start).sort((a, b) => (b.start.ts || 0) - (a.start.ts || 0));
   return seeded[0] || null;
@@ -263,7 +273,7 @@ function todaySetsHTML(ses, ex) {
   const sets = setsOf(ses, ex.id).slice().sort((a, b) => a.ts - b.ts || a.set - b.set); // chronological across machines
   if (!sets.length) return '';
   return `<div class="today-sets" data-testid="today-sets">
-    <div class="row"><span class="sub mach-label grow">Today · ${sets.length} set${sets.length === 1 ? '' : 's'}</span>
+    <div class="row"><span class="sub mach-label grow">${esc(dayWord(ses.date))} · ${sets.length} set${sets.length === 1 ? '' : 's'}</span>
       <span class="fine">tap to edit / delete</span></div>
     ${sets.map(e => `<button class="entry today-set" data-a="edit-entry" data-sid="${ses.id}" data-id="${e.id}" data-testid="today-set">
       <span class="n">Set ${e.set}</span>
@@ -272,6 +282,11 @@ function todaySetsHTML(ses, ex) {
 }
 function todaySetsSiblings(ses, exId) {
   return ses.entries.filter(x => x.kind === 'set' && x.exId === exId).sort((a, b) => a.ts - b.ts || a.set - b.set);
+}
+function pastBanner(date) {
+  if (!date || date >= todayStr()) return '';
+  return `<div class="pastbar" data-testid="past-banner"><span class="grow">📅 Logging for <b>${esc(fmtD(date))}</b></span>
+    <button class="chip sm" data-a="date-today" data-testid="back-today">Back to today</button></div>`;
 }
 function compactSets(ents) {
   const out = [];
@@ -940,7 +955,7 @@ async function setWake(want) {
 
 /* ---------------- Session actions ---------------- */
 function startSession(tid, mode, repeatFrom) {
-  const date = todayStr();
+  const date = activeDate(); // sessions are keyed by date + template
   let ses = S.sessions.find(s => s.date === date && s.tid === tid);
   if (ses) { if (mode && ses.mode !== mode) { ses.mode = mode; markSessionDirty(ses); } persist(); return go(`#/s/${ses.id}`); }
   const t = tplById(tid); let exIds = t.exIds.filter(id => exById(id) && !exById(id).archived);
@@ -962,8 +977,24 @@ function repeatTarget(ses, exId) {
 const prevSoloSource = (tid, date) => sortedSessions().find(s => s.tid === tid && s.date < date && s.entries.length);
 
 /* ---------------- View: Today ---------------- */
+function dateSwitcher(date) {
+  const t0 = todayStr(), y = daysAgo(1); const earlier = date < y;
+  return `<div class="datebar" data-testid="datebar">
+    <button class="chip sm ${date === t0 ? 'on' : ''}" data-a="pick-date" data-d="${t0}" data-testid="date-today">Today</button>
+    <button class="chip sm ${date === y ? 'on' : ''}" data-a="pick-date" data-d="${y}" data-testid="date-yesterday">Yesterday</button>
+    <button class="chip sm ${earlier ? 'on' : ''}" data-a="date-earlier" data-testid="date-earlier">${earlier ? esc(fmtD(date)) + ' ▾' : 'Earlier…'}</button></div>`;
+}
+function openEarlierSheet() {
+  const sel = activeDate();
+  const days = [...Array(14)].map((_, i) => daysAgo(13 - i)); // oldest → today, 2 rows of 7
+  const cells = days.map(ds => { const n = S.sessions.filter(s => s.date === ds).reduce((a, s) => a + s.entries.length, 0); const dd = pd(ds);
+    return `<button class="dcell ${ds === sel ? 'on' : ''} ${n ? 'has' : ''}" data-a="pick-date" data-d="${ds}" data-testid="day-${ds}"><span>${DOW[dd.getDay()].slice(0, 3)}</span><b>${dd.getDate()}</b><i>${n ? '●' : ''}</i></button>`; }).join('');
+  openSheet(`<h2>Log for which day?</h2><div class="sub" style="margin-bottom:10px">Last 14 days · ● has entries</div>
+    <div class="dgrid" data-testid="day-grid">${cells}</div>
+    <div style="height:12px"></div><button class="btn ghost" data-a="sheet-cancel">Cancel</button>`);
+}
 function viewToday() {
-  const date = todayStr(); const d = pd(date); const sch = S.schedule[d.getDay()]; const t = sch.t && tplById(sch.t);
+  const date = activeDate(); const d = pd(date); const isPast = date !== todayStr(); const sch = S.schedule[d.getDay()]; const t = sch.t && tplById(sch.t);
   const todays = S.sessions.filter(s => s.date === date);
   const nb = needsBackup();
   const reminder = nb ? `<div class="card warn" data-testid="backup-reminder"><b>💾 ${nb.never ? `No backup in ${nb.days} days` : `Last backup ${nb.days} days ago`}</b>
@@ -974,7 +1005,7 @@ function viewToday() {
     const prev = sch.m === 'solo' ? prevSoloSource(t.id, date) : null;
     const existing = todays.find(s => s.tid === t.id);
     const nEx = t.exIds.filter(id => exById(id) && !exById(id).archived).length;
-    hero = `<div class="card hero" data-testid="suggest"><div class="sub">Today's plan · ${esc(DOW[d.getDay()])}</div><h1 style="margin:2px 0 6px">${esc(t.name)}</h1>
+    hero = `<div class="card hero" data-testid="suggest"><div class="sub">${isPast ? esc(fmtD(date)) + "'s plan" : "Today's plan"} · ${esc(DOW[d.getDay()])}</div><h1 style="margin:2px 0 6px">${esc(t.name)}</h1>
       <div class="row" style="margin-bottom:14px"><span class="pill ${sch.m}">${sch.m === 'coach' ? 'With coach' : 'Solo'}</span>
       ${prev && !existing ? `<span class="sub">repeat day</span>` : ''}${!nEx ? '<span class="sub">no exercises yet</span>' : ''}</div>
       ${existing ? `<a class="btn pri" href="#/s/${existing.id}">Continue ${esc(t.name)} · ${existing.entries.length} logged</a>` :
@@ -984,17 +1015,18 @@ function viewToday() {
         nEx ? `<button class="btn pri" data-a="start" data-t="${t.id}" data-m="${sch.m}" data-testid="start-suggested">Open ${esc(t.name)}</button>`
             : `<a class="btn pri" href="#/setup/days">Add exercises to ${esc(t.name)}</a>`}</div>`;
   } else {
-    hero = `<div class="card hero" data-testid="suggest"><div class="sub">Today's plan · ${esc(DOW[d.getDay()])}</div><h1 style="margin:2px 0 6px">Rest day</h1><div class="sub">Nothing scheduled. Pick any workout below.</div></div>`;
+    hero = `<div class="card hero" data-testid="suggest"><div class="sub">${isPast ? esc(fmtD(date)) + "'s plan" : "Today's plan"} · ${esc(DOW[d.getDay()])}</div><h1 style="margin:2px 0 6px">Rest day</h1><div class="sub">Nothing scheduled. Pick any workout below.</div></div>`;
   }
   const others = todays.filter(s => !t || s.tid !== t.id);
   const mon = new Date(d); mon.setDate(d.getDate() - ((d.getDay() + 6) % 7));
   const week = [...Array(7)].map((_, i) => { const x = new Date(mon); x.setDate(mon.getDate() + i); const ds = ymd(x); const sc = S.schedule[x.getDay()];
     const done = S.sessions.some(s => s.date === ds && s.entries.length);
-    return `<div class="${ds === date ? 'today' : ''} ${done ? 'done' : ''}">${DOW[x.getDay()].slice(0, 3)}<b>${esc(shortTpl(sc.t && tplById(sc.t)))}</b>${sc.t ? (sc.m === 'coach' ? 'coach' : 'solo') : '&nbsp;'}</div>`; }).join('');
-  return `<div class="sub" style="margin-top:6px">${esc(fmtDLong(date))}</div>
-    <div id="update-slot"></div>${reminder}
+    return `<div class="${ds === todayStr() ? 'today' : ''} ${ds === date && isPast ? 'sel' : ''} ${done ? 'done' : ''}">${DOW[x.getDay()].slice(0, 3)}<b>${esc(shortTpl(sc.t && tplById(sc.t)))}</b>${sc.t ? (sc.m === 'coach' ? 'coach' : 'solo') : '&nbsp;'}</div>`; }).join('');
+  return `${dateSwitcher(date)}${pastBanner(date)}
+    ${isPast ? '' : `<div class="sub" style="margin-top:6px">${esc(fmtDLong(date))}</div>`}
+    <div id="update-slot"></div>${isPast ? '' : reminder}
     ${hero}
-    ${others.map(s => `<a class="li" href="#/s/${s.id}"><div><div class="t">Continue ${esc((tplById(s.tid) || {}).name)}</div><div class="s">${s.entries.length} entries logged today</div></div></a>`).join('')}
+    ${others.map(s => `<a class="li" href="#/s/${s.id}"><div><div class="t">Continue ${esc((tplById(s.tid) || {}).name)}</div><div class="s">${s.entries.length} entries logged ${esc(dayWordLc(date))}</div></div></a>`).join('')}
     <h3>This week</h3><div class="week">${week}</div>
     <h3>Other workouts</h3>
     <div class="list">${S.templates.map(x => `<button class="li" data-a="start" data-t="${x.id}" data-m="${sch.t === x.id ? sch.m : 'solo'}" data-testid="tpl-${x.id}"><div><div class="t">${esc(x.name)}</div><div class="s">${(n => n === 0 ? 'No exercises yet — add in Setup' : n === 1 ? '1 exercise' : n + ' exercises')(x.exIds.filter(id => exById(id) && !exById(id).archived).length)}</div></div></button>`).join('')}</div>`;
@@ -1008,7 +1040,7 @@ function viewSession(sid) {
     const ex = exById(exId); let badge = '<span class="badge">—</span>', sub = '';
     if (ex.kind === 'cardio') {
       const c = cardioOf(ses, exId);
-      if (c.length) { badge = `<span class="badge done">✓ ${c.reduce((a, e) => a + e.dur, 0)} min</span>`; sub = `Today: ${c.map(cardioSummary).join(', ')}`; }
+      if (c.length) { badge = `<span class="badge done">✓ ${c.reduce((a, e) => a + e.dur, 0)} min</span>`; sub = `${esc(dayWord(ses.date))}: ${c.map(cardioSummary).join(', ')}`; }
       else { const l = lastFor(exId, null, ses.id); sub = l ? `Last: ${lastLine(l)}` : 'No history yet'; }
     } else {
       const sets = setsOf(ses, exId);
@@ -1016,16 +1048,16 @@ function viewSession(sid) {
         badge = `<span class="badge ${sets.length >= 3 ? 'done' : 'part'}">${sets.length >= 3 ? '✓ ' : ''}${sets.length} set${sets.length > 1 ? 's' : ''}</span>`;
         const ordered = sets.slice().sort((a, b) => a.ts - b.ts || a.set - b.set);
         const mNames = [...new Set(ordered.map(e => machName(exId, e.mId)))];
-        sub = `Today: ${compactSets(ordered)}${mNames.length ? ' · ' + mNames.map(esc).join(', ') : ''}`;
+        sub = `${esc(dayWord(ses.date))}: ${compactSets(ordered)}${mNames.length ? ' · ' + mNames.map(esc).join(', ') : ''}`;
       } else {
         const tg = repeatTarget(ses, exId);
         if (tg) sub = `Target: ${esc(machName(exId, tg.mId))} · ${compactSets(tg.ents)}`;
-        else { const m = recentMachine(ex); const l = m && lastFor(exId, m.id, ses.id); sub = l ? `Last: ${esc(m.name)} · ${esc(lastLine(l))}` : 'No history yet'; }
+        else { const m = recentMachine(ex, ses.date); const l = m && lastFor(exId, m.id, ses.id); sub = l ? `Last: ${esc(m.name)} · ${esc(lastLine(l))}` : 'No history yet'; }
       }
     }
     return `<a class="li" href="#/s/${ses.id}/e/${exId}" data-testid="ex-row" data-ex="${exId}"><div class="grow"><div class="t">${esc(ex.name)}${ex.pinned ? ' ⚠️' : ''}</div><div class="s">${sub}</div></div>${badge}</a>`;
   }).join('');
-  return `<div class="top"><a class="back" href="#/today">‹ Today</a></div>
+  return `<div class="top"><a class="back" href="#/today">‹ ${ses.date === todayStr() ? 'Today' : 'Day'}</a></div>${pastBanner(ses.date)}
     <h1>${esc(t.name)}</h1><div class="sub">${esc(fmtDLong(ses.date))}${src ? ` · repeating ${esc(fmtD(src.date))}` : ''}</div>
     <div style="margin:14px 0" data-testid="mode">${seg('mode', [['coach', 'With coach'], ['solo', 'Solo']], ses.mode, `data-sid="${ses.id}"`)}</div>
     <div class="list">${rows || '<div class="empty">No exercises in this template yet. Add some in Setup, or below.</div>'}</div>
@@ -1155,8 +1187,8 @@ function adviceFor(ex, mId) {
 function machineGrid(ses, ex, mId, mode = 'grid') {
   const cards = sortedMachines(ex).map(x => {
     const todayN = ses ? setsOf(ses, ex.id, x.id).length : 0;
-    const l = lastFor(ex.id, x.id, null);
-    const lastTxt = todayN ? `today: ${compactSets(setsOf(ses, ex.id, x.id))}` : (l ? lastLine(l) : 'no history yet');
+    const l = lastFor(ex.id, x.id, ses ? ses.id : null);
+    const lastTxt = todayN ? `${ses.date === todayStr() ? 'today' : 'this day'}: ${compactSets(setsOf(ses, ex.id, x.id))}` : (l ? lastLine(l) : 'no history yet');
     return `<button class="mcard ${x.id === mId ? 'on' : ''}" data-a="mach" data-m="${x.id}" data-testid="mcard">
       <span class="mn">${esc(x.name)}</span><span class="ml" data-testid="mcard-last">${esc(lastTxt)}</span>
       ${machFine(x) ? `<span class="mf">${machFine(x)}</span>` : ''}${x.caution ? `<span class="mf mcaut" data-testid="mcard-caution">⚠️ ${esc(x.caution)}</span>` : ''}</button>`; }).join('');
@@ -1177,7 +1209,7 @@ function viewExercise(sid, exId) {
   if (mId && !machById(ex, mId)) mId = null;
   if (mId) p = initDraft(ses, ex, mId);
   const m = machById(ex, mId);
-  const recent = recentMachine(ex); const recentL = recent && lastFor(ex.id, recent.id, null);
+  const recent = recentMachine(ex, ses.date); const recentL = recent && lastFor(ex.id, recent.id, null, ses.date);
   const tg = repeatTarget(ses, exId);
   let body = '';
   if (!m) {
@@ -1194,7 +1226,7 @@ function viewExercise(sid, exId) {
     const l = lastFor(exId, mId, sid); const today = cardioOf(ses, exId);
     body = `${ex.machines.length > 1 ? machineGrid(ses, ex, mId) : ''}
       ${l && !l.seed ? `<div class="last" data-testid="last"><span class="sub">Last time</span><b>${cardioSummary(lastEnt(l))}</b><span class="sub">${esc(fmtD(l.date))}${lastEnt(l).diff ? ' · difficulty ' + lastEnt(l).diff : ''}</span></div>` : '<div class="last" data-testid="last"><span class="sub">No previous entry for this activity</span></div>'}
-      ${today.length ? `<h3>Logged today</h3>${today.map(e => `<button class="entry" data-a="edit-entry" data-sid="${sid}" data-id="${e.id}" data-testid="cardio-entry"><span class="grow">${cardioSummary(e)}</span>✎</button>`).join('')}` : ''}
+      ${today.length ? `<h3>Logged ${esc(dayWordLc(ses.date))}</h3>${today.map(e => `<button class="entry" data-a="edit-entry" data-sid="${sid}" data-id="${e.id}" data-testid="cardio-entry"><span class="grow">${cardioSummary(e)}</span>✎</button>`).join('')}` : ''}
       ${cardioPicker(p)}<h3>Difficulty</h3>${diffPicker(p)}<h3>Quick notes</h3>${notePicker(p)}`;
   } else {
     const todayAll = setsOf(ses, exId);
@@ -1204,7 +1236,7 @@ function viewExercise(sid, exId) {
     let lastBlock;
     if (todayHere.length) {
       const lastToday = todayHere[todayHere.length - 1];
-      lastBlock = `<div class="last last-prom" data-testid="last"><span class="sub">Today on this machine</span>
+      lastBlock = `<div class="last last-prom" data-testid="last"><span class="sub">${ses.date === todayStr() ? 'Today' : esc(dayWord(ses.date))} on this machine</span>
         <b>${fmtTotal(dispW(lastToday))}${lastToday.reps ? ' × ' + lastToday.reps : ''}</b>
         <span class="sub">${compactSets(todayHere)}${lastToday.diff ? ' · d' + lastToday.diff : ''}</span>${goUp}</div>`;
     } else if (l) {
@@ -1213,7 +1245,7 @@ function viewExercise(sid, exId) {
         <span class="sub">${esc(fmtD(l.date))}${l.seed ? '' : ' · ' + compactSets(l.ents)}${lastE.diff ? ' · d' + lastE.diff : ''}</span>
         ${goUp}</div>`;
     } else if (todayAll.length) {
-      lastBlock = `<div class="last last-prom" data-testid="last"><span class="sub">No prior history on this machine — today's ${todayAll.length} set${todayAll.length === 1 ? '' : 's'} ${todayAll.length === 1 ? 'is' : 'are'} listed above</span></div>`;
+      lastBlock = `<div class="last last-prom" data-testid="last"><span class="sub">No prior history on this machine — ${ses.date === todayStr() ? "today's" : "this day's"} ${todayAll.length} set${todayAll.length === 1 ? '' : 's'} ${todayAll.length === 1 ? 'is' : 'are'} listed above</span></div>`;
     } else {
       lastBlock = `<div class="last last-prom" data-testid="last"><span class="sub">No history on this machine yet</span></div>`;
     }
@@ -1232,7 +1264,7 @@ function viewExercise(sid, exId) {
       </div>`;
   }
   return `<div class="top"><a class="back" href="#/s/${sid}">‹ ${esc((tplById(ses.tid) || {}).name || 'Session')}</a><a class="back right" style="color:var(--mut);font-size:14px" href="#/set/e/${ex.id}">Edit</a></div>
-    <h1 class="ex-title">${esc(ex.name)}</h1>
+    ${pastBanner(ses.date)}<h1 class="ex-title">${esc(ex.name)}</h1>
     ${m ? `<div class="row wrap"><span class="selm">${esc(m.name)}</span>${m.photoId ? `<button class="photo-link" data-a="photo" data-id="${m.photoId}" data-testid="photo-link">📷</button>` : ''}</div>
       ${machFine(m) ? `<div class="fine" data-testid="loc">${machFine(m)}</div>` : ''}` : ''}
     ${m ? '' : cuesHTML(ex, m)}
@@ -1382,7 +1414,7 @@ function viewHistDetail(sid) {
     <div style="height:16px"></div><a class="btn" href="#/s/${s.id}">Open session to log more</a>
     <button class="btn bad" data-a="del-session" data-sid="${s.id}" data-testid="del-session">Delete this session</button>`;
 }
-function openEntrySheet(sid, id) {
+function openEntrySheet(sid, id, keep) {
   const s = sesById(sid); const e = s && s.entries.find(x => x.id === id); if (!e) return;
   const p = 'ed';
   if (e.kind === 'set') {
@@ -1390,6 +1422,8 @@ function openEntrySheet(sid, id) {
     P[p] = { base, noBase: e.base === null, add: round1(dispW(e) - base), reps: e.reps, mId: e.mId };
   } else P[p] = { dur: e.dur, dist: e.dist || 0, level: e.level || 0 };
   Object.assign(P[p], { diff: e.diff || 3, tags: (e.tags || []).slice(), sid, id });
+  if (keep && e.kind === 'set') Object.assign(P[p], { add: keep.add, reps: keep.reps, diff: keep.diff, tags: keep.tags.slice() }); // unsaved edits survive a machine move
+  const ex = exById(e.exId);
   const siblings = e.kind === 'set' ? todaySetsSiblings(s, e.exId) : [];
   const idx = siblings.findIndex(x => x.id === e.id);
   const prev = idx > 0 ? siblings[idx - 1] : null;
@@ -1403,7 +1437,9 @@ function openEntrySheet(sid, id) {
   openSheet(`<div class="entry-sheet" data-testid="entry-sheet">
     <div class="entry-body">
       <div class="entry-head"><h2>${esc(exName(e.exId))} · ${e.kind === 'set' ? 'Set ' + e.set : 'Cardio'}</h2>
-        <div class="sub">${esc(machName(e.exId, e.mId))}</div></div>
+        <div class="row entry-mrow">${s.date !== todayStr() ? `<span class="pill past-pill" data-testid="entry-date">📅 ${esc(fmtD(s.date))}</span>` : ''}
+        ${e.kind === 'set' && ex && ex.machines.length > 1 ? `<button class="chip sm mpick" data-a="entry-mach" data-testid="entry-mach">Machine: ${esc(machName(e.exId, e.mId))} ▾</button>`
+          : `<span class="sub">${esc(machName(e.exId, e.mId))}</span>`}</div></div>
       ${nav}
       ${e.kind === 'set' ? `${weightPicker(p, true)}${repsPicker(p, null, true)}` : cardioPicker(p)}
       <div class="diff-compact"><h3>Difficulty</h3>${diffPicker(p)}</div>
@@ -1415,6 +1451,34 @@ function openEntrySheet(sid, id) {
       <button class="btn bad" data-a="entry-del" data-testid="entry-del">Delete</button>
     </div></div>`);
   centerChips(false);
+}
+/* Move a set (or all of that day's sets on its machine) to another machine of the same exercise.
+   Keeps the working weight you picked (plates/stack) and re-applies the new machine's base. Undoable. */
+let MV = null;
+function openMoveSheet() {
+  const d = P.ed; const s = sesById(d.sid); const e = s && s.entries.find(x => x.id === d.id); if (!e || e.kind !== 'set') return;
+  if (!MV || MV.id !== e.id) MV = { sid: s.id, id: e.id, scope: 'one', keep: { add: d.add, reps: d.reps, diff: d.diff, tags: (d.tags || []).slice() } };
+  const ex = exById(e.exId); const same = setsOf(s, e.exId, e.mId);
+  const opts = sortedMachines(ex).filter(m => m.id !== e.mId).map(m => { const n = setsOf(s, ex.id, m.id).length;
+    return `<button class="entry" data-a="mach-move" data-m="${m.id}" data-testid="move-to"><span class="grow"><b>${esc(m.name)}</b><span class="note">${[machFine(m), noBase(m) ? '' : 'base ' + fmtW(baseOf(m)) + ' ' + unit(), n ? `${n} set${n === 1 ? '' : 's'} ${dayWordLc(s.date)}` : ''].filter(Boolean).join(' · ')}</span></span>→</button>`; }).join('');
+  openSheet(`<div data-testid="move-sheet"><h2>Move to machine</h2><div class="sub" style="margin-bottom:8px">${esc(ex.name)} · ${esc(fmtD(s.date))} · now on ${esc(machName(ex.id, e.mId))}</div>
+    ${same.length > 1 ? `<div style="margin-bottom:8px" data-testid="move-scope">${seg('mvscope', [['one', 'Set ' + e.set + ' only'], ['all', `All ${same.length} sets here`]], MV.scope, '')}</div>` : ''}
+    <div class="move-list">${opts || '<div class="empty">No other machines for this exercise.</div>'}</div>
+    <button class="btn ghost" data-a="mach-back" data-testid="move-cancel">Cancel</button></div>`);
+}
+function moveSets(sid, ids, newMid) {
+  const s = sesById(sid); const ents = s.entries.filter(e => ids.includes(e.id) && e.kind === 'set'); if (!ents.length) return null;
+  const ex = exById(ents[0].exId); const m = machById(ex, newMid); if (!m) return null;
+  const before = ents.map(e => ({ e, mId: e.mId, set: e.set, base: e.base, w: e.w, u: e.u }));
+  let n = s.entries.filter(e => e.kind === 'set' && e.exId === ex.id && e.mId === newMid && !ids.includes(e.id)).reduce((a, e) => Math.max(a, e.set || 0), 0);
+  ents.sort((a, b) => a.ts - b.ts || a.set - b.set).forEach(e => {
+    const u = e.u || 'lb';
+    const nb = noBase(m) ? null : round1(conv(baseOf(m), unit(), u));
+    const add = e.add != null ? e.add : round1((e.w || 0) - (e.base || 0));
+    e.add = add; e.base = nb; e.w = round1(add + (nb || 0)); e.mId = newMid; e.set = ++n;
+  });
+  markDirty(ents.map(e => e.id)); persist();
+  return { m, ents, undo: () => { before.forEach(b => Object.assign(b.e, { mId: b.mId, set: b.set, base: b.base, w: b.w, u: b.u })); markDirty(before.map(b => b.e.id)); persist(); render(); } };
 }
 
 /* ---------------- View: Progress ---------------- */
@@ -1684,6 +1748,19 @@ document.addEventListener('click', async ev => {
     case 'toast-undo': if (toastUndo) toastUndo(); $('#toast').hidden = true; toastUndo = null; return;
     case 'update-reload': return location.reload();
     case 'start': return startSession(ds.t, ds.m);
+    case 'pick-date': workDate = ds.d >= todayStr() ? null : ds.d; closeSheet(null); if (route()[0] !== 'today') return go('#/today'); return render();
+    case 'date-today': workDate = null; closeSheet(null); if (route()[0] !== 'today') return go('#/today'); return render();
+    case 'date-earlier': return openEarlierSheet();
+    case 'entry-mach': MV = null; return openMoveSheet();
+    case 'mvscope': if (MV) MV.scope = ds.v; return openMoveSheet();
+    case 'mach-back': { const mv = MV; MV = null; if (!mv) return closeSheet(null); return openEntrySheet(mv.sid, mv.id, mv.keep); }
+    case 'mach-move': {
+      const mv = MV; if (!mv) return; const s = sesById(mv.sid); const e = s && s.entries.find(x => x.id === mv.id); if (!e) return;
+      const ids = mv.scope === 'all' ? setsOf(s, e.exId, e.mId).map(x => x.id) : [e.id];
+      const r = moveSets(mv.sid, ids, ds.m); MV = null; if (!r) return;
+      openEntrySheet(mv.sid, mv.id, mv.keep); render();
+      return toast(`Moved ${r.ents.length === 1 ? 'Set → ' : r.ents.length + ' sets → '}${r.m.name}`, () => { closeSheet(null); r.undo(); });
+    }
     case 'repeat': return startSession(ds.t, 'solo', ds.sid);
     case 'finish': { const s = sesById(ds.sid); syncNow(); if (!s || (!s.entries.length && !s.wrap)) { toast('Saved. Nice work!'); return go('#/today'); }
       W = null; wrapReturn = '#/today'; return go(`#/w/${s.id}`); }
@@ -1749,7 +1826,7 @@ document.addEventListener('click', async ev => {
       const todayN = setsOf(ses, curEx.exId).length;
       if (todayN >= 3) {
         const ex = exById(curEx.exId);
-        if (!await confirmSheet('Log more sets?', `You already have ${todayN} sets on ${ex ? ex.name : 'this exercise'} today. Add ${nums.length} more on this machine?`, 'Add sets', 'pri')) return;
+        if (!await confirmSheet('Log more sets?', `You already have ${todayN} sets on ${ex ? ex.name : 'this exercise'} ${dayWordLc(ses.date)}. Add ${nums.length} more on this machine?`, 'Add sets', 'pri')) return;
       }
       return logSets(nums);
     }
@@ -1759,7 +1836,7 @@ document.addEventListener('click', async ev => {
       const todayN = setsOf(ses, curEx.exId).length;
       if (todayN >= 3) {
         const ex = exById(curEx.exId);
-        if (!await confirmSheet('Add another set?', `You already have ${todayN} sets on ${ex ? ex.name : 'this exercise'} today. Log Set ${n}?`, 'Log set', 'pri')) return;
+        if (!await confirmSheet('Add another set?', `You already have ${todayN} sets on ${ex ? ex.name : 'this exercise'} ${dayWordLc(ses.date)}. Log Set ${n}?`, 'Log set', 'pri')) return;
       }
       return logSets([n]);
     }

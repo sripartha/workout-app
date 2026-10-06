@@ -272,3 +272,18 @@ details{margin:10px 0}summary{color:var(--mut);cursor:pointer;padding:10px 0;fon
 .today-sets .mach-label{margin:0;color:#9fe3c2}
 .today-sets .entry{margin:6px 0 0;background:var(--bg3)}
 .today-set .note{display:block;margin-top:2px}
+/* 2.5.1 past-day logging */
+.datebar{display:flex;gap:6px;margin:6px 0 4px}
+.datebar .chip{flex:1;min-height:38px;padding:6px 8px}
+.pastbar{display:flex;align-items:center;gap:8px;margin:6px 0;padding:6px 6px 6px 12px;border-radius:12px;background:rgba(255,170,60,.14);border:1px solid rgba(255,170,60,.55);color:var(--fg);font-size:15px}
+.pastbar .chip{min-height:34px;padding:4px 10px;font-size:13px}
+.week div.sel{border-color:#ffaa3c;box-shadow:inset 0 0 0 1px #ffaa3c}
+.dgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.dcell{display:flex;flex-direction:column;align-items:center;gap:1px;min-height:58px;padding:6px 0;border-radius:12px;border:1px solid var(--line);background:var(--bg3);color:var(--mut);font-size:11px;cursor:pointer}
+.dcell b{color:var(--fg);font-size:17px}
+.dcell i{font-style:normal;color:#33c27f;font-size:9px;min-height:10px}
+.dcell.on{background:var(--acc);border-color:var(--acc);color:#1a0d02}.dcell.on b,.dcell.on i{color:#1a0d02}
+.entry-mrow{gap:6px;margin-top:2px;flex-wrap:wrap}
+.past-pill{background:rgba(255,170,60,.18);color:#ffcf8a}
+.mpick{min-height:34px;padding:4px 12px;font-size:14px}
+.move-list{max-height:52vh;overflow:auto;margin-bottom:6px}
