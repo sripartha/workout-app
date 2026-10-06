@@ -24,7 +24,7 @@ Only these need hosting: `index.html app.js styles.css sw.js manifest.webmanifes
 ## Using it
 
 0. **First run** opens a 3-step **Setup** (nothing is pre-loaded; the Push/Pull/Leg/Core/Cardio days start empty, the schedule is kept):
-   1. units + optional **home gym** (e.g. Austin);
+   1. units + optional **home gym** (e.g. Lakeway);
    2. **exercises per day**: tap suggestion chips or type several, one per line;
    3. **machines** per exercise: free name (near-duplicates fine, e.g. two "Hammer Strength"), optional **gym tag** (home gym listed first,
       e.g. San Jose), optional **location note** ("back wall, by the windows"), **base weight** (barbell 45, 0 for stacks/dumbbells),

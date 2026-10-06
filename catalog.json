@@ -1,12 +1,12 @@
 {
  "app": "liftlog",
  "schema": 2,
- "version": "2.4.3",
- "catalogVersion": 1791211122313,
- "exportedAt": "2026-10-05T14:38:44.383107Z",
+ "version": "2.5.4",
+ "catalogVersion": 1791280202220,
+ "exportedAt": "2026-10-06T09:50:03.866492Z",
  "state": {
   "v": 2,
-  "created": 1791211122313,
+  "created": 1791280202220,
   "setupDone": true,
   "lastExport": null,
   "settings": {
@@ -15,7 +15,7 @@
    "stepKg": 2.5,
    "defaultReps": 12,
    "distUnit": "mi",
-   "homeGym": "Austin"
+   "homeGym": "Lakeway"
   },
   "exercises": {
    "chest-press": {
@@ -28,7 +28,7 @@
       "name": "HOIST ROC-IT Chest Press",
       "base": 0,
       "bu": "lb",
-      "gym": "Austin",
+      "gym": "Lakeway",
       "loc": "4-2",
       "cues": "Elbows flared, keep it controlled",
       "caution": ""
@@ -48,7 +48,7 @@
       "name": "Hammer Strength Select Chest Press",
       "base": 0,
       "bu": "lb",
-      "gym": "Austin",
+      "gym": "Lakeway",
       "loc": "8-12",
       "cues": "Elbows ~30-45° from torso (not fully flared), chest up, back supported by the pad",
       "caution": "Don't force excessive depth if the shoulder starts to pinch"
@@ -58,7 +58,7 @@
       "name": "Nautilus Selectorized Chest Press (Lakeway)",
       "base": 0,
       "bu": "lb",
-      "gym": "Austin",
+      "gym": "Lakeway",
       "loc": "8-2",
       "cues": "Elbows flared",
       "caution": ""
@@ -78,7 +78,7 @@
       "name": "Hammer Strength Iso-Lateral Bench Press",
       "base": null,
       "bu": "lb",
-      "gym": "Austin",
+      "gym": "Lakeway",
       "loc": "9-11",
       "cues": "Elbows ~30-45° from torso (not fully flared), chest up, back supported by the pad",
       "caution": "Don't force excessive depth if the shoulder starts to pinch"
@@ -97,7 +97,7 @@
       "name": "Hammer Strength Select Incline Press",
       "base": 0,
       "bu": "lb",
-      "gym": "Austin",
+      "gym": "Lakeway",
       "loc": "8-11",
       "cues": "Elbows tucked ~30-45° (not flared), handles start around armpit/upper chest, controlled range of motion",
       "caution": "Don't force the bottom position if the right shoulder feels pinchy"
@@ -107,7 +107,7 @@
       "name": "Incline Press (Mauricio)",
       "base": null,
       "bu": "lb",
-      "gym": "Austin",
+      "gym": "Lakeway",
       "loc": "",
       "cues": "Elbows tucked, don't flare the elbows, controlled range for the shoulder",
       "caution": ""
@@ -127,7 +127,7 @@
       "name": "Hammer Strength Iso-Lateral Incline Press",
       "base": null,
       "bu": "lb",
-      "gym": "Austin",
+      "gym": "Lakeway",
       "loc": "9-10",
       "cues": "Elbows tucked ~30-45° (not flared), handles start around armpit/upper chest, controlled range of motion",
       "caution": "Don't force the bottom position if the right shoulder feels pinchy"
@@ -146,7 +146,7 @@
       "name": "Hammer Strength Iso-Lateral Decline Press",
       "base": null,
       "bu": "lb",
-      "gym": "Austin",
+      "gym": "Lakeway",
       "loc": "9-9",
       "cues": "Elbows ~30-45° from torso, controlled range of motion",
       "caution": "Don't force excessive depth if the shoulder starts to pinch"
@@ -175,7 +175,7 @@
       "name": "Nautilus Impact Deltoid Fly / Pec Fly",
       "base": 0,
       "bu": "lb",
-      "gym": "Austin",
+      "gym": "Lakeway",
       "loc": "5-4 / 5-5 / 5-6",
       "cues": "",
       "caution": ""
@@ -194,7 +194,7 @@
       "name": "Cable Tower (single-arm pulldown)",
       "base": 0,
       "bu": "lb",
-      "gym": "Austin",
+      "gym": "Lakeway",
       "loc": "Row 7 (any of 9 towers)",
       "cues": "Single handle, pulley ~mid-shoulder height, palm down, elbow tucked beside body, upper arm fixed (only forearm moves), extend until nearly straight, don't swing the shoulder",
       "caution": "",
@@ -249,7 +249,7 @@
       "name": "Nautilus Impact Triceps Extension",
       "base": 0,
       "bu": "lb",
-      "gym": "Austin",
+      "gym": "Lakeway",
       "loc": "5-9",
       "cues": "",
       "caution": ""
@@ -268,7 +268,7 @@
       "name": "HOIST Seated Dip",
       "base": null,
       "bu": "lb",
-      "gym": "Austin",
+      "gym": "Lakeway",
       "loc": "4-7",
       "cues": "Narrow grip, elbows tucked, brace abs, full movement (don't shorten the bottom)",
       "caution": ""
@@ -287,7 +287,7 @@
       "name": "Plate-Loaded Iso-Lateral Shoulder Press",
       "base": null,
       "bu": "lb",
-      "gym": "Austin",
+      "gym": "Lakeway",
       "loc": "9-7",
       "cues": "Elbows tucked/aligned (not flared), handles start at shoulder/upper-chest level (not near nipples), forearms ~vertical, controlled return, don't let elbows travel far behind the torso",
       "caution": ""
@@ -307,7 +307,7 @@
       "name": "Hammer Strength Select Shoulder Press",
       "base": 0,
       "bu": "lb",
-      "gym": "Austin",
+      "gym": "Lakeway",
       "loc": "8-9",
       "cues": "",
       "caution": ""
@@ -317,7 +317,7 @@
       "name": "HOIST Shoulder Press",
       "base": 0,
       "bu": "lb",
-      "gym": "Austin",
+      "gym": "Lakeway",
       "loc": "4-3",
       "cues": "",
       "caution": ""
@@ -375,7 +375,7 @@
       "name": "Cable Tower",
       "base": 0,
       "bu": "lb",
-      "gym": "Austin",
+      "gym": "Lakeway",
       "loc": "Row 7 (any of 9 towers)",
       "cues": "",
       "caution": "",
@@ -410,7 +410,7 @@
       "name": "Hammer Strength Iso-Lateral Front Lat Pulldown",
       "base": null,
       "bu": "lb",
-      "gym": "Austin",
+      "gym": "Lakeway",
       "loc": "9-8",
       "cues": "Independent levers, drive elbows down",
       "caution": ""
@@ -429,7 +429,7 @@
       "name": "Cable Tower",
       "base": 0,
       "bu": "lb",
-      "gym": "Austin",
+      "gym": "Lakeway",
       "loc": "Row 7 (any of 9 towers)",
       "cues": "Elbows tucked",
       "caution": "",
@@ -464,7 +464,7 @@
       "name": "Hammer Strength Iso-Lateral Low Row",
       "base": null,
       "bu": "lb",
-      "gym": "Austin",
+      "gym": "Lakeway",
       "loc": "9-4",
       "cues": "Independent levers, elbows tucked",
       "caution": ""
@@ -483,7 +483,7 @@
       "name": "Iso-Lateral Upper-Back Row",
       "base": null,
       "bu": "lb",
-      "gym": "Austin",
+      "gym": "Lakeway",
       "loc": "9-6",
       "cues": "Elbows flared for upper back, one arm at a time, lean forward so chest is firmly on the pad, don't count the set if you sit back and lose chest support · Confirm this is the Upper-Back Row machine",
       "caution": ""
@@ -502,7 +502,7 @@
       "name": "Iso-Lateral High Row",
       "base": null,
       "bu": "lb",
-      "gym": "Austin",
+      "gym": "Lakeway",
       "loc": "9-5",
       "cues": "Chest planted on the support, shoulders down, drive elbows fully back, controlled",
       "caution": ""
@@ -531,7 +531,7 @@
       "name": "Nautilus Impact Deltoid Fly / Pec Fly",
       "base": 0,
       "bu": "lb",
-      "gym": "Austin",
+      "gym": "Lakeway",
       "loc": "5-4 / 5-5 / 5-6",
       "cues": "",
       "caution": ""
@@ -570,7 +570,7 @@
       "name": "HOIST Biceps Curl",
       "base": 0,
       "bu": "lb",
-      "gym": "Austin",
+      "gym": "Lakeway",
       "loc": "4-6",
       "cues": "",
       "caution": ""
@@ -589,7 +589,7 @@
       "name": "Nautilus Hack Squat (Lakeway)",
       "base": 80,
       "bu": "lb",
-      "gym": "Austin",
+      "gym": "Lakeway",
       "loc": "11-A",
       "cues": "Feet apart & centered, toes at the upper horizontal line, heels over the notched part of the platform, machine Level 3, back & hips supported, brace abs, don't turn toes far out, don't lock knees at top",
       "caution": "",
@@ -619,7 +619,7 @@
       "name": "Nautilus Angled Leg Press",
       "base": 90,
       "bu": "lb",
-      "gym": "Austin",
+      "gym": "Lakeway",
       "loc": "10-A / 10-C",
       "cues": "",
       "caution": ""
@@ -648,7 +648,7 @@
       "name": "Hammer Strength Iso-Lateral Leg Extension",
       "base": 4,
       "bu": "lb",
-      "gym": "Austin",
+      "gym": "Lakeway",
       "loc": "10-1",
       "cues": "Independent levers, one leg at a time",
       "caution": "",
@@ -669,7 +669,7 @@
       "name": "Nautilus Inspiration Leg Extension",
       "base": 0,
       "bu": "lb",
-      "gym": "Austin",
+      "gym": "Lakeway",
       "loc": "8-3",
       "cues": "Backup when the Hammer Strength is busy",
       "caution": "",
@@ -689,7 +689,7 @@
       "name": "Nautilus Inspiration Seated Leg Curl",
       "base": 0,
       "bu": "lb",
-      "gym": "Austin",
+      "gym": "Lakeway",
       "loc": "8-4",
       "cues": "Feet neutral or slightly toes-up, don't rotate or point the feet, knees track straight ahead",
       "caution": "",
@@ -709,7 +709,7 @@
       "name": "HOIST Adductor (Inner Thigh)",
       "base": 0,
       "bu": "lb",
-      "gym": "Austin",
+      "gym": "Lakeway",
       "loc": "8-5 / 8-6",
       "cues": "Comfortable starting width (next-wider was too wide), squeeze inward, open again under control · brand of the 8-5 / 8-6 twins unconfirmed",
       "caution": ""
@@ -738,7 +738,7 @@
       "name": "HOIST Abductor (Outer Thigh)",
       "base": 0,
       "bu": "lb",
-      "gym": "Austin",
+      "gym": "Lakeway",
       "loc": "8-5 / 8-6",
       "cues": "Push outward, start smoothly and gradually, don't pop/launch the pads, controlled return · brand of the 8-5 / 8-6 twins unconfirmed",
       "caution": ""
@@ -777,7 +777,7 @@
       "name": "Nautilus Standing Calf Raise",
       "base": 45,
       "bu": "lb",
-      "gym": "Austin",
+      "gym": "Lakeway",
       "loc": "9-C",
       "cues": "",
       "caution": "Reported a significant pull under the inside of the right heel after using this machine",

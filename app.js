@@ -1,7 +1,7 @@
 /* Lift Log — tap-only workout logger PWA. Plain JS, no build step, no dependencies. */
 'use strict';
 (function () {
-const APP_VERSION = '2.5.3';
+const APP_VERSION = '2.5.4';
 const LB_PER_KG = 2.20462;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -165,6 +165,16 @@ function migrate(s) {
     s.templates.forEach(t => { const n = TPL_RENAME[String(t.name || '').trim().toLowerCase()]; if (n) { t.name = n; renamed.add(t.id); } });
     if (renamed.size) { const d = new Set(s.sync.dirty); s.sessions.forEach(x => { if (renamed.has(x.tid)) x.entries.forEach(e => d.add(e.id)); }); s.sync.dirty = [...d]; } // sheet rows pick up the new name
     s.migrated.tplNames252 = true;
+  }
+  // 2.5.4: gym tag "Austin" → "Lakeway" (Crunch Lakeway) on every machine (catalog + phone-added) and the home gym. One time.
+  // Sessions reference machines by id, so history is untouched; ranking stays the same because home + tags change together.
+  if (!s.migrated.gymLakeway254) {
+    const isAustin = g => String(g == null ? '' : g).trim().toLowerCase() === 'austin';
+    const moved = new Set();
+    Object.values(s.exercises).forEach(e => (e.machines || []).forEach(m => { if (isAustin(m.gym)) { m.gym = 'Lakeway'; moved.add(m.id); } }));
+    if (isAustin(s.settings.homeGym)) s.settings.homeGym = 'Lakeway';
+    if (moved.size) { const d = new Set(s.sync.dirty); s.sessions.forEach(x => x.entries.forEach(e => { if (moved.has(e.mId)) d.add(e.id); })); s.sync.dirty = [...d]; } // sheet "gym" column follows
+    s.migrated.gymLakeway254 = true;
   }
   if (s.lastAppliedCatalogVersion == null) s.lastAppliedCatalogVersion = 0;
   if (s.lastAppVersion == null) s.lastAppVersion = '';
@@ -986,7 +996,7 @@ function mergeSheetRows(data) {
     if (row.machine_id && machById(ex, str(row.machine_id))) return machById(ex, str(row.machine_id));
     const nm = str(row.machine);
     let m = nm ? ex.machines.find(x => normName(x.name) === normName(nm)) : ex.machines[0];
-    if (!m) { m = { id: str(row.machine_id) || uid(), name: nm || 'Machine', base: str(row.base_weight) === '' ? null : +row.base_weight || 0, bu: str(row.unit) || 'lb', gym: str(row.gym), loc: '', cues: '', caution: '' }; ex.machines.push(m); }
+    if (!m) { m = { id: str(row.machine_id) || uid(), name: nm || 'Machine', base: str(row.base_weight) === '' ? null : +row.base_weight || 0, bu: str(row.unit) || 'lb', gym: /^austin$/i.test(str(row.gym)) ? 'Lakeway' : str(row.gym), loc: '', cues: '', caution: '' }; ex.machines.push(m); }
     return m;
   };
   const created = new Set();
@@ -1661,7 +1671,7 @@ function viewSetup(stepName) {
   if (!stepName) return `<div class="wz"><div class="sub">Step 1 of 3</div><h1>Welcome to Lift Log 👋</h1>
     <p class="sub">Let's set up your gym once. You only type here — at the gym everything is taps.</p>
     <h3>Units</h3>${seg('set-unit', [['lb', 'Pounds (lb)'], ['kg', 'Kilograms (kg)']], unit())}
-    <h3>Home gym (optional)</h3><input class="field" data-i="home-gym" placeholder="e.g. Austin" value="${esc(S.settings.homeGym)}" data-testid="home-gym">
+    <h3>Home gym (optional)</h3><input class="field" data-i="home-gym" placeholder="e.g. Lakeway" value="${esc(S.settings.homeGym)}" data-testid="home-gym">
     <div class="sub" style="margin-top:6px">Machines tagged with your home gym are listed first. Tag others e.g. "San Jose".</div>
     <div style="height:20px"></div><a class="btn pri" href="#/setup/days" data-testid="wz-next">Next: exercises per day</a>
     <button class="btn ghost" data-a="wz-skip">Skip setup for now</button></div>`;
@@ -1742,7 +1752,7 @@ function viewSettings() {
   <h3>Weight step</h3><div class="chips">${(st.unit === 'kg' ? [1, 2.5, 5] : [2.5, 5, 10]).map(v => `<button class="chip ${v === step() ? 'on' : ''}" data-a="set-step" data-v="${v}">${v} ${st.unit}</button>`).join('')}</div>
   <h3>Default reps</h3><div class="chips">${[8, 10, 12, 15].map(v => `<button class="chip ${v === st.defaultReps ? 'on' : ''}" data-a="set-reps" data-v="${v}">${v}</button>`).join('')}</div>
   <h3>Cardio distance</h3>${seg('set-dist', [['mi', 'Miles'], ['km', 'Kilometres']], st.distUnit)}
-  <h3>Home gym</h3><input class="field" data-i="home-gym" placeholder="e.g. Austin" value="${esc(st.homeGym)}">
+  <h3>Home gym</h3><input class="field" data-i="home-gym" placeholder="e.g. Lakeway" value="${esc(st.homeGym)}">
   <h2>Weekly schedule</h2>
   ${days.map(d => `<div class="mrow"><span style="width:44px;font-weight:700">${DOW[d].slice(0, 3)}</span>
     <select class="field grow" style="min-height:44px;padding:8px;width:auto" data-i="sched" data-d="${d}" aria-label="${DOW[d]} template">${tplOpts(S.schedule[d].t)}</select>
