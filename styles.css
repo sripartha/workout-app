@@ -148,9 +148,9 @@ details{margin:10px 0}summary{color:var(--mut);cursor:pointer;padding:10px 0;fon
 .confirm h1{text-align:center;font-size:30px;margin-top:10px}.confirm>.sub:first-child{text-align:center}
 .wz .card h2{font-size:19px}
 /* Locked in-set mode */
-.locked{position:fixed;inset:0;z-index:80;background:#07080a;color:var(--fg);touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;overscroll-behavior:none;
+#locked{position:fixed;inset:0;z-index:80;background:#07080a;color:var(--fg);touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;overscroll-behavior:none;
   display:flex;flex-direction:column;align-items:center;padding:calc(var(--sat) + 16px) calc(var(--sar) + 16px) calc(var(--sab) + 16px) calc(var(--sal) + 16px)}
-.locked *{touch-action:none;-webkit-touch-callout:none}
+#locked *{touch-action:none;-webkit-touch-callout:none}
 .lk-head{text-align:center;margin-top:28px}.lk-ex{font-size:26px;font-weight:800}
 .lk-timer{font-size:96px;font-weight:800;letter-spacing:-3px;margin-top:12vh;font-variant-numeric:tabular-nums;color:#fff}
 .lk-hint{color:var(--mut);text-align:center;max-width:280px;margin-top:10px;font-size:15px}
@@ -161,7 +161,7 @@ details{margin:10px 0}summary{color:var(--mut);cursor:pointer;padding:10px 0;fon
 .lk-done .fill,.lk-cancel .fill{position:absolute;left:0;top:0;bottom:0;width:0;background:rgba(51,194,127,.45)}
 .lk-cancel .fill{background:rgba(255,90,95,.4)}
 .lk-done .lbl,.lk-cancel .lbl{position:relative}
-.locked.arming .lk-done .fill{animation:lkfill 300ms linear forwards}
+#locked.arming .lk-done .fill{animation:lkfill 300ms linear forwards}
 .lk-cancel.down .fill{animation:lkfill 1000ms linear forwards}
 @keyframes lkfill{to{width:100%}}
 
@@ -181,8 +181,8 @@ details{margin:10px 0}summary{color:var(--mut);cursor:pointer;padding:10px 0;fon
 
 .wlabel{font-size:13px;color:var(--mut);text-align:center;margin:8px 0 0;font-weight:600}
 .bquiet{color:var(--mut);font-weight:500;font-size:12px}
-.baseline{text-align:center;margin:4px 0 8px;display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;position:relative;z-index:0}
-.baseline.locked .bquiet{font-size:12px}
+.baseline{text-align:center;margin:4px 0 8px;padding:0;min-height:0;background:none;display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;position:relative;z-index:0}
+.baseline.base-locked .bquiet{font-size:12px}
 .baseline .baselock{min-height:32px;padding:4px 10px;font-size:12px;opacity:.85}
 .baseline .linkbtn{color:var(--mut);font-size:13px;text-decoration:none}
 .wscroll{position:relative;z-index:1}
@@ -292,3 +292,18 @@ details{margin:10px 0}summary{color:var(--mut);cursor:pointer;padding:10px 0;fon
   background:var(--blue);color:#001;font-weight:700;font-size:14px;box-shadow:0 4px 16px rgba(0,0,0,.45);cursor:pointer;white-space:nowrap}
 body.focus .updbar{bottom:auto;top:calc(env(safe-area-inset-top,0px) + 6px)}
 .verrow{margin:8px 0 4px;padding:8px 10px;border:1px solid var(--line);border-radius:12px;background:var(--bg2);font-size:15px}
+
+/* 2.5.3: base is always one slim line; today's sets as compact chips (no-scroll exercise screen) */
+.baseline{flex-wrap:nowrap;height:auto;max-height:40px}
+.wp-compact .baseline{margin:0 0 2px}
+.today-sets.ts-compact{margin:4px 0 6px;padding:6px 8px}
+.ts-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.tschip{display:inline-flex;align-items:baseline;gap:5px;min-height:38px;padding:6px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg3);color:var(--fg);font-size:14px;font-weight:600;cursor:pointer;max-width:100%}
+.tschip b{color:#9fe3c2;font-size:12px;font-weight:700}
+.tschip small{color:var(--mut);font-size:11px;font-weight:500;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ex-log > .mach-label{margin:4px 0 2px}
+.ex-log .more-log{margin-top:2px}
+.ex-log .more-log summary{padding:6px 0}
+.selm + .photo-link{min-height:28px;padding:2px 10px;font-size:13px}
+body.focus #app.has-bar{padding-bottom:calc(var(--sab) + 112px)} /* = slim setbar height; avoids scrolling empty space */
+.ts-gm{font-size:11px;color:var(--mut);margin:4px 0 -2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

@@ -1,7 +1,7 @@
 /* Lift Log — tap-only workout logger PWA. Plain JS, no build step, no dependencies. */
 'use strict';
 (function () {
-const APP_VERSION = '2.5.2';
+const APP_VERSION = '2.5.3';
 const LB_PER_KG = 2.20462;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -281,12 +281,14 @@ function recentMachine(ex, upto) {
 function todaySetsHTML(ses, ex) {
   const sets = setsOf(ses, ex.id).slice().sort((a, b) => a.ts - b.ts || a.set - b.set); // chronological across machines
   if (!sets.length) return '';
-  return `<div class="today-sets" data-testid="today-sets">
+  const groups = []; sets.forEach(e => { let g = groups.find(x => x.mId === e.mId); if (!g) groups.push(g = { mId: e.mId, sets: [] }); g.sets.push(e); });
+  const multi = groups.length > 1; // one chip row per machine (named) only when the day's sets span machines
+  // One compact row of tappable chips (wraps for many sets) so the exercise screen fits without scrolling.
+  return `<div class="today-sets ts-compact" data-testid="today-sets">
     <div class="row"><span class="sub mach-label grow">${esc(dayWord(ses.date))} · ${sets.length} set${sets.length === 1 ? '' : 's'}</span>
-      <span class="fine">tap to edit / delete</span></div>
-    ${sets.map(e => `<button class="entry today-set" data-a="edit-entry" data-sid="${ses.id}" data-id="${e.id}" data-testid="today-set">
-      <span class="n">Set ${e.set}</span>
-      <span class="grow">${fmtTotal(dispW(e))} × ${e.reps}<span class="note">${esc(machName(ex.id, e.mId))}</span></span>✎</button>`).join('')}
+      <span class="fine">tap to edit</span></div>
+    ${groups.map(g => `${multi ? `<div class="ts-gm">${esc(machName(ex.id, g.mId))}</div>` : ''}<div class="ts-chips">${g.sets.map(e => `<button class="tschip today-set" data-a="edit-entry" data-sid="${ses.id}" data-id="${e.id}" data-testid="today-set" aria-label="Set ${e.set}, ${fmtW(dispW(e))} by ${e.reps}, ${esc(machName(ex.id, e.mId))}">
+      <b>S${e.set}</b>${fmtW(dispW(e))}×${e.reps}</button>`).join('')}</div>`).join('')}
   </div>`;
 }
 function todaySetsSiblings(ses, exId) {
@@ -336,7 +338,7 @@ function baseLineHTML(p) {
     return `<div class="baseline" data-testid="base-line"><button class="linkbtn fine" data-a="ask-base" data-m="${d.mId}">Base: ${fmtW(d.base)} ${unit()} — tap to change</button>
       <button class="chip sm baselock" data-a="lock-base" data-m="${d.mId}" data-testid="lock-base" aria-label="Lock base">🔒 Lock</button></div>`;
   }
-  return `<div class="baseline locked" data-testid="base-line"><span class="bquiet">🔒 Base ${fmtW(d.base)} ${unit()}</span>
+  return `<div class="baseline base-locked" data-testid="base-line"><span class="bquiet">🔒 Base ${fmtW(d.base)} ${unit()}</span>
     <button class="chip sm baselock" data-a="unlock-base" data-m="${d.mId}" data-testid="unlock-base" aria-label="Unlock base to edit">Unlock</button></div>`;
 }
 function weightPicker(p, compact = false) {
