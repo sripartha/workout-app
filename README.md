@@ -73,6 +73,19 @@ from the small **Base: — (tap to set)** line on the exercise screen (chips 0�
 or in the machine editor. When you set it, earlier sets on that machine get their totals filled in automatically. Changing it later
 only affects new sets.
 
+### Fine-tuning weights (v2.5.6)
+* **Working weight**: two tiny circles **1** and **.5** sit beside the big **−** (step down 1 / 0.5) and beside the big **+**
+  (step up 0.5 / 1), in the display unit (lb or kg): `(1)(.5) −  50 lb  + (.5)(1)`. Half-pound values (e.g. 12.5 lb) save, display,
+  sync and export as-is, and the next visit pre-fills 12.5 instead of rounding to the chip step.
+* **Base**: tap **Unlock** on the 🔒 base line → it becomes `(1)(.5)  Base 10 lb ✎  (.5)(1)  🔒 Lock` (tap the value for the full
+  picker). Base 10 → 12: **Unlock, right-hand 1, right-hand 1, Lock**.
+* **What a base change does** (same rule as the base picker): every set stores its own `add`, `base` and total `w` (= add + base) when
+  it is logged. Changing a machine's base updates the machine and the live total on screen (working stays, total moves by the base
+  difference); sets logged after the change use the new base. **Already-logged sets keep their stored base and total** (e.g. 50 + 10 =
+  60 stays 60), so history, charts, CSV and the Sheet don't change. Only sets logged while the base was *not set* get totals filled
+  in. To correct one old set, open it and adjust its weight.
+* Dumbbell machines (name contains "Dumbbell") label the weight **(per dumbbell)**: log one dumbbell, not the pair.
+
 ### Per-machine cautions
 Besides the exercise-level pinned caution, each machine can carry its own caution (machine editor › *Caution for this machine*).
 It shows in small print on the machine card and as a ⚠️ card when that machine is selected.

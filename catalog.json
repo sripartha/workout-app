@@ -1,12 +1,12 @@
 {
  "app": "liftlog",
  "schema": 2,
- "version": "2.5.4",
- "catalogVersion": 1791280202220,
- "exportedAt": "2026-10-06T09:50:03.866492Z",
+ "version": "2.5.6",
+ "catalogVersion": 1791381704072,
+ "exportedAt": "2026-10-07T14:01:45.659775Z",
  "state": {
   "v": 2,
-  "created": 1791280202220,
+  "created": 1791381704072,
   "setupDone": true,
   "lastExport": null,
   "settings": {
@@ -579,6 +579,25 @@
     "pinned": "Avoid Nautilus Impact Biceps Curl, hurt shoulder",
     "cues": ""
    },
+   "hammer-curl": {
+    "id": "hammer-curl",
+    "name": "Hammer Curl",
+    "kind": "strength",
+    "machines": [
+     {
+      "id": "m-hammer-curl-dumbbells",
+      "name": "Dumbbells",
+      "base": 0,
+      "bu": "lb",
+      "gym": "Lakeway",
+      "loc": "Dumbbell rack",
+      "cues": "Weight is per dumbbell (log one dumbbell, not the pair)",
+      "caution": ""
+     }
+    ],
+    "pinned": "",
+    "cues": ""
+   },
    "hack-squat": {
     "id": "hack-squat",
     "name": "Hack Squat",
@@ -824,7 +843,8 @@
      "upper-back-row",
      "high-row",
      "rear-delt-fly",
-     "biceps-curl"
+     "biceps-curl",
+     "hammer-curl"
     ]
    },
    {

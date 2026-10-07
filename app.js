@@ -1,7 +1,7 @@
 /* Lift Log — tap-only workout logger PWA. Plain JS, no build step, no dependencies. */
 'use strict';
 (function () {
-const APP_VERSION = '2.5.5';
+const APP_VERSION = '2.5.6';
 const LB_PER_KG = 2.20462;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -212,6 +212,14 @@ function setMachineBase(ex, m, b) {
   Object.keys(P).forEach(k => { if (P[k] && P[k].mId === m.id && P[k].base !== undefined) { P[k].base = baseOf(m); P[k].noBase = noBase(m); } });
 }
 const fmtW = v => String(round1(v));
+/* 2.5.6 fine-tune: two tiny circles '1' and '.5' beside − (step down) and beside + (step up), in the display unit,
+   on the working weight and on the unlocked base line, e.g. 12.5 lb on the incline bench or base 10 → 12. */
+const fineDots = (action, p, side, mId) => (side < 0 ? [1, 0.5] : [0.5, 1]).map(v => {
+  const d = side * v; const lbl = v === 1 ? '1' : '.5'; const id = `${action === 'wfine' ? 'w' : 'base'}-${side < 0 ? 'down' : 'up'}${v === 1 ? '1' : '05'}`;
+  return `<button class="fdot" data-a="${action}" ${p ? `data-p="${p}"` : ''} ${mId ? `data-m="${mId}"` : ''} data-d="${d}" data-testid="${id}" aria-label="${side < 0 ? 'minus' : 'plus'} ${v} ${unit()}${action === 'base-fine' ? ' base' : ''}">${lbl}</button>`; }).join('');
+// Prefill from a logged/starting weight: snap to the weight step only when it's already on it (unit-conversion noise),
+// otherwise keep fine values to the nearest 0.5 (12.5, 101, …) instead of rounding them away.
+const keepFine = v => { v = Math.max(0, v); const s5 = snap(v); return Math.abs(s5 - v) < 0.06 ? s5 : Math.round(v * 2) / 2; };
 const fmtTotal = v => v === 0 ? 'BW' : `${round1(v)} ${unit()}`;
 const snap = v => { const st = step(); return Math.max(0, round1(Math.round(v / st) * st)); };
 function machineForDraft(p) {
@@ -348,8 +356,11 @@ function baseLineHTML(p) {
     return `<div class="baseline" data-testid="base-line"><button class="linkbtn fine" data-a="ask-base" data-m="${d.mId}" data-testid="set-base">Set base</button><span class="bquiet"> · bar/sled/carriage (rarely changes)</span></div>`;
   }
   const unlocked = baseUnlocked.has(d.mId);
-  if (unlocked) {
-    return `<div class="baseline" data-testid="base-line"><button class="linkbtn fine" data-a="ask-base" data-m="${d.mId}">Base: ${fmtW(d.base)} ${unit()} — tap to change</button>
+  if (unlocked) { // −1 / +1 fine-tune the machine's base; tapping the value still opens the full base picker
+    return `<div class="baseline base-open" data-testid="base-line">
+      <span class="fdots">${fineDots('base-fine', null, -1, d.mId)}</span>
+      <button class="linkbtn fine" data-a="ask-base" data-m="${d.mId}" data-testid="base-value" aria-label="Change base">Base <b>${fmtW(d.base)}</b> ${unit()} ✎</button>
+      <span class="fdots">${fineDots('base-fine', null, 1, d.mId)}</span>
       <button class="chip sm baselock" data-a="lock-base" data-m="${d.mId}" data-testid="lock-base" aria-label="Lock base">🔒 Lock</button></div>`;
   }
   return `<div class="baseline base-locked" data-testid="base-line"><span class="bquiet">🔒 Base ${fmtW(d.base)} ${unit()}</span>
@@ -362,10 +373,12 @@ function weightPicker(p, compact = false) {
   const cls = compact ? ' wp-compact' : '';
   const showBase = p !== 'ed'; // entry sheet stays short — base lives on the log screen
   return `<div class="wpick${cls}">${showBase ? baseLineHTML(p) : ''}
-  <div class="wlabel" data-testid="working-label">Working <span class="bquiet">${custom ? '(cable)' : '(plates / pin)'}</span></div>
-  <div class="row"><button class="step" data-a="wstep" data-p="${p}" data-d="-1" aria-label="minus">−</button>
+  <div class="wlabel" data-testid="working-label">Working <span class="bquiet">${custom ? '(cable)' : /dumbbell/i.test((machineForDraft(p) || {}).name || '') ? '(per dumbbell)' : '(plates / pin)'}</span></div>
+  <div class="row wrow"><span class="fdots">${fineDots('wfine', p, -1)}</span>
+  <button class="step" data-a="wstep" data-p="${p}" data-d="-1" aria-label="minus">−</button>
   <div class="grow bigval" id="wv-${p}" data-testid="weight-value">${weightBig(p)}</div>
-  <button class="step" data-a="wstep" data-p="${p}" data-d="1" aria-label="plus">+</button></div>
+  <button class="step" data-a="wstep" data-p="${p}" data-d="1" aria-label="plus">+</button>
+  <span class="fdots">${fineDots('wfine', p, 1)}</span></div>
   <div class="wscroll" data-p="${p}" data-testid="weight-chips">${chips.join('')}</div>
   <div class="total" id="wt-${p}" data-testid="weight-total">${weightTotal(p)}</div></div>`;
 }
@@ -1292,7 +1305,7 @@ function initDraft(ses, ex, mId) {
     {
       const raw = ref ? Math.max(0, (ref.base === null ? round1(conv(ref.add || 0, ref.u || 'lb', unit())) : dispW(ref)) - d.base) : 0;
       const mchips = m && m.weightChips && m.weightChips.length ? m.weightChips.map(c => round1(conv(+c, m.chipBu || 'lb', unit()))) : null;
-      d.add = mchips ? snapToChips(raw, mchips) : snap(raw);
+      d.add = mchips && mchips.some(c => Math.abs(c - raw) < 0.06) ? snapToChips(raw, mchips) : keepFine(raw);
     }
     d.reps = today.length ? today[today.length - 1].reps : S.settings.defaultReps;
   }
@@ -1797,10 +1810,10 @@ function initME(exId, mId) {
   // new machine: default the starting weight to the exercise's latest total on any machine (a sensible first guess)
   const rm = !m && recentMachine(ex); const prev = rm && lastEnt(lastFor(exId, rm.id));
   const startTot = m && m.start ? round1(conv(m.start.w, m.start.u, unit())) : prev && prev.kind === 'set' ? round1(dispW(prev)) : 0;
-  P.me = { add: snap(Math.max(0, startTot - (ME.base || 0))), base: ME.base || 0 };
+  P.me = { add: keepFine(startTot - (ME.base || 0)), base: ME.base || 0 };
 }
 /* changing the base keeps the starting TOTAL the same (added weight adjusts) */
-function meSetBase(b) { const tot = P.me.add + (ME.base || 0); ME.base = b; P.me.base = b || 0; P.me.add = snap(Math.max(0, tot - (b || 0))); render(); }
+function meSetBase(b) { const tot = P.me.add + (ME.base || 0); ME.base = b; P.me.base = b || 0; P.me.add = keepFine(tot - (b || 0)); render(); }
 function viewMachineEdit(exId, mId) {
   const ex = exById(exId); if (!ex) return `<div class="empty">Exercise not found.</div>`;
   if (!ME || ME.exId !== exId || ME.key !== mId) initME(exId, mId);
@@ -2026,6 +2039,13 @@ document.addEventListener('click', async ev => {
     case 'new-mach': meReturn = location.hash; ME = null; return go(`#/set/m/${ds.ex}/new`);
     case 'edit-mach': meReturn = location.hash; ME = null; return go(`#/set/m/${ds.ex}/${ds.m}`);
     case 'w': pk.add = +ds.v; return updateWeightUI(p);
+    case 'wfine': pk.add = clamp(round1(pk.add + (+ds.d)), 0, unit() === 'kg' ? 300 : 650); return updateWeightUI(p);
+    case 'base-fine': { // same path as the base picker: machine base changes; logged sets keep their stored base/total
+      const ex = exById(curEx && curEx.exId); const m = machById(ex, ds.m);
+      if (!m || noBase(m) || !baseUnlocked.has(m.id)) return;
+      const nb = clamp(round1(baseOf(m) + (+ds.d)), 0, unit() === 'kg' ? 150 : 330);
+      setMachineBase(ex, m, nb); persist(); render(); return toast(`Base ${fmtW(nb)} ${unit()} · logged sets keep their totals`);
+    }
     case 'wstep': { pk.add = stepChip(pk.add, weightChipList(p), +ds.d); return updateWeightUI(p); }
     case 'rstep': pk.reps = clamp(pk.reps + (+ds.d), 1, 50); return updateRepsUI(p);
     case 'rset': pk.reps = +ds.v; updateRepsUI(p); el.remove(); return;
@@ -2298,7 +2318,7 @@ async function maybeSafetyBackup(reason) {
   render(); registerSW();
   if (navigator.storage && navigator.storage.persist) navigator.storage.persisted().then(p => p || navigator.storage.persist()).catch(() => {});
   scheduleSync(1500);
-  window.__liftlog = { state: () => S, persist, syncNow, version: APP_VERSION, wake: () => ({ wanted: wakeWanted, held: !!wakeSentinel }),
+  window.__liftlog = { state: () => S, persist, syncNow, version: APP_VERSION, buildCSV, wake: () => ({ wanted: wakeWanted, held: !!wakeSentinel }),
     mergeCatalog, saveImportSnapshot, loadImportSnaps, refreshSnapCount, checkCatalogUpdate, undoLastImport, eraseAllData, maybeSafetyBackup };
 })();
 })();
