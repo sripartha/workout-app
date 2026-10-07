@@ -1,7 +1,7 @@
 /* Lift Log — tap-only workout logger PWA. Plain JS, no build step, no dependencies. */
 'use strict';
 (function () {
-const APP_VERSION = '2.5.4';
+const APP_VERSION = '2.5.5';
 const LB_PER_KG = 2.20462;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -18,6 +18,10 @@ const dowName = s => DOW[pd(s).getDay()];
 /* Day being logged on the Today screen. In-memory only (never persisted), so every app launch starts on today. */
 let workDate = null;
 const activeDate = () => (workDate && workDate < todayStr() ? workDate : todayStr());
+/* Past-date guard (2.5.5): opening an exercise / tapping a Set button on a day that isn't today asks first.
+   "Keep" remembers the date until the day selection changes or the app relaunches (in-memory only). */
+let pastOk = null, guardSeen = null, PG = null;
+function setWorkDate(d) { const nd = d && d < todayStr() ? d : null; if (nd !== workDate) pastOk = null; workDate = nd; }
 const daysAgo = n => { const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() - n); return ymd(d); };
 const dayWord = date => date === todayStr() ? 'Today' : date === daysAgo(1) ? 'Yesterday' : fmtD(date);
 const dayWordLc = date => date === todayStr() ? 'today' : date === daysAgo(1) ? 'yesterday' : 'on ' + fmtD(date);
@@ -329,7 +333,7 @@ function lastLine(l, withDate = true) {
 /* ---------------- Routing ---------------- */
 const route = () => (location.hash || '#/today').slice(2).split('/');
 function go(hash) { if (location.hash === hash) render(); else location.hash = hash; }
-window.addEventListener('hashchange', () => { closeSheet(); render(); window.scrollTo(0, 0); });
+window.addEventListener('hashchange', () => { closeSheet(); guardSeen = null; render(); window.scrollTo(0, 0); });
 
 /* ---------------- UI primitives (pickers keep their state in P[prefix]) ---------------- */
 const P = {};
@@ -1066,6 +1070,34 @@ async function setWake(want) {
 }
 
 /* ---------------- Session actions ---------------- */
+function newSessionLike(src, date) { // same template, given day; reused when switching / moving sets between days
+  const t = tplById(src.tid);
+  const exIds = t ? t.exIds.filter(id => exById(id) && !exById(id).archived) : (src.exIds || []).slice();
+  const ses = { id: uid(), date, tid: src.tid, mode: src.mode || 'solo', repeatFrom: null, exIds, entries: [], thoughts: {}, created: Date.now() };
+  S.sessions.push(ses); return ses;
+}
+const sessionOn = (src, date) => S.sessions.find(x => x.date === date && x.tid === src.tid && x !== src) || null;
+const sesEmpty = s => !s.entries.length && !s.wrap && !Object.values(s.thoughts || {}).some(v => String(v || '').trim());
+function pastGuardSes() {
+  if (!curEx) return null; const s = sesById(curEx.sid);
+  return s && s.date < todayStr() && pastOk !== s.date ? s : null;
+}
+function openPastGuard(ses, act) {
+  PG = { sid: ses.id, exId: curEx.exId, date: ses.date, act };
+  openSheet(`<div class="pastguard" data-testid="past-guard"><div class="pg-ico">📅</div>
+    <h2 data-testid="past-guard-msg">You're logging for ${esc(fmtD(ses.date))} — not today.</h2>
+    <div class="sub">Today is ${esc(fmtD(todayStr()))}.</div>
+    <button class="btn pri" data-a="pg-today" data-testid="pg-today">Switch to today</button>
+    <button class="btn" data-a="pg-keep" data-testid="pg-keep">Keep ${esc(fmtD(ses.date))}</button></div>`);
+}
+function switchToToday(sid, exId) {
+  const src = sesById(sid); setWorkDate(null); if (!src) return go('#/today');
+  const t = sessionOn(src, todayStr()) || newSessionLike(src, todayStr());
+  if (!t.exIds.includes(exId)) t.exIds.push(exId);
+  const k0 = draftKey(sid, exId), k1 = draftKey(t.id, exId); // carry the weight/reps/machine you were on
+  if (P[k0] && !P[k1]) P[k1] = JSON.parse(JSON.stringify(P[k0]));
+  persist(); go(`#/s/${t.id}/e/${exId}`); toast('Logging for today');
+}
 function startSession(tid, mode, repeatFrom) {
   const date = activeDate(); // sessions are keyed by date + template
   let ses = S.sessions.find(s => s.date === date && s.tid === tid);
@@ -1534,7 +1566,12 @@ function openEntrySheet(sid, id, keep) {
     P[p] = { base, noBase: e.base === null, add: round1(dispW(e) - base), reps: e.reps, mId: e.mId };
   } else P[p] = { dur: e.dur, dist: e.dist || 0, level: e.level || 0 };
   Object.assign(P[p], { diff: e.diff || 3, tags: (e.tags || []).slice(), sid, id });
-  if (keep && e.kind === 'set') Object.assign(P[p], { add: keep.add, reps: keep.reps, diff: keep.diff, tags: keep.tags.slice() }); // unsaved edits survive a machine move
+  P[p].moveTo = null; P[p].moveScope = 'one';
+  if (keep) { // unsaved edits survive a machine move / date pick
+    if (e.kind === 'set') Object.assign(P[p], { add: keep.add, reps: keep.reps }); else if (keep.dur != null) Object.assign(P[p], { dur: keep.dur, dist: keep.dist, level: keep.level });
+    Object.assign(P[p], { diff: keep.diff, tags: keep.tags.slice(), moveTo: keep.moveTo && keep.moveTo !== s.date ? keep.moveTo : null, moveScope: keep.moveScope || 'one' });
+  }
+  const dayEnts = dayEntriesOf(s, e); const nMove = P[p].moveScope === 'all' ? dayEnts.length : 1;
   const ex = exById(e.exId);
   const siblings = e.kind === 'set' ? todaySetsSiblings(s, e.exId) : [];
   const idx = siblings.findIndex(x => x.id === e.id);
@@ -1549,7 +1586,7 @@ function openEntrySheet(sid, id, keep) {
   openSheet(`<div class="entry-sheet" data-testid="entry-sheet">
     <div class="entry-body">
       <div class="entry-head"><h2>${esc(exName(e.exId))} · ${e.kind === 'set' ? 'Set ' + e.set : 'Cardio'}</h2>
-        <div class="row entry-mrow">${s.date !== todayStr() ? `<span class="pill past-pill" data-testid="entry-date">📅 ${esc(fmtD(s.date))}</span>` : ''}
+        <div class="row entry-mrow"><button class="chip sm dpick ${P[p].moveTo ? 'on' : s.date !== todayStr() ? 'past' : ''}" data-a="entry-date" data-testid="entry-date">Date: ${esc(fmtD(P[p].moveTo || s.date))}${P[p].moveTo && nMove > 1 ? ` (all ${nMove})` : ''} ▾</button>
         ${e.kind === 'set' && ex && ex.machines.length > 1 ? `<button class="chip sm mpick" data-a="entry-mach" data-testid="entry-mach">Machine: ${esc(machName(e.exId, e.mId))} ▾</button>`
           : `<span class="sub">${esc(machName(e.exId, e.mId))}</span>`}</div></div>
       ${nav}
@@ -1558,7 +1595,7 @@ function openEntrySheet(sid, id, keep) {
       <details class="more-log"><summary>Notes</summary>${notePicker(p)}</details>
     </div>
     <div class="entry-actions" data-testid="entry-actions">
-      <button class="btn pri" data-a="entry-save" data-testid="entry-save">Save</button>
+      <button class="btn pri" data-a="entry-save" data-testid="entry-save">${P[p].moveTo ? `Save · move to ${esc(dayWord(P[p].moveTo))}` : 'Save'}</button>
       <button class="btn ghost" data-a="sheet-cancel" data-testid="entry-cancel">Cancel</button>
       <button class="btn bad" data-a="entry-del" data-testid="entry-del">Delete</button>
     </div></div>`);
@@ -1569,7 +1606,7 @@ function openEntrySheet(sid, id, keep) {
 let MV = null;
 function openMoveSheet() {
   const d = P.ed; const s = sesById(d.sid); const e = s && s.entries.find(x => x.id === d.id); if (!e || e.kind !== 'set') return;
-  if (!MV || MV.id !== e.id) MV = { sid: s.id, id: e.id, scope: 'one', keep: { add: d.add, reps: d.reps, diff: d.diff, tags: (d.tags || []).slice() } };
+  if (!MV || MV.id !== e.id) MV = { sid: s.id, id: e.id, scope: 'one', keep: edKeep() };
   const ex = exById(e.exId); const same = setsOf(s, e.exId, e.mId);
   const opts = sortedMachines(ex).filter(m => m.id !== e.mId).map(m => { const n = setsOf(s, ex.id, m.id).length;
     return `<button class="entry" data-a="mach-move" data-m="${m.id}" data-testid="move-to"><span class="grow"><b>${esc(m.name)}</b><span class="note">${[machFine(m), noBase(m) ? '' : 'base ' + fmtW(baseOf(m)) + ' ' + unit(), n ? `${n} set${n === 1 ? '' : 's'} ${dayWordLc(s.date)}` : ''].filter(Boolean).join(' · ')}</span></span>→</button>`; }).join('');
@@ -1591,6 +1628,58 @@ function moveSets(sid, ids, newMid) {
   });
   markDirty(ents.map(e => e.id)); persist();
   return { m, ents, undo: () => { before.forEach(b => Object.assign(b.e, { mId: b.mId, set: b.set, base: b.base, w: b.w, u: b.u })); markDirty(before.map(b => b.e.id)); persist(); render(); } };
+}
+
+/* Change a set's date (2.5.5): move one entry (or all of that exercise's entries that day) to the same template's
+   session on another day (created if needed). Renumbers both days, drops the old session only if nothing is left
+   (no entries, wrap-up or notes). Entries keep their ids, so the sheet sync upserts them with the new session_id. Undoable. */
+const edKeep = () => { const d = P.ed; return { add: d.add, reps: d.reps, dur: d.dur, dist: d.dist, level: d.level, diff: d.diff, tags: (d.tags || []).slice(), moveTo: d.moveTo || null, moveScope: d.moveScope || 'one' }; };
+const dayEntriesOf = (s, e) => s.entries.filter(x => x.exId === e.exId && x.kind === e.kind).sort((a, b) => a.ts - b.ts || (a.set || 0) - (b.set || 0));
+let DM = null;
+function openDateSheet() {
+  const d = P.ed; const s = sesById(d.sid); const e = s && s.entries.find(x => x.id === d.id); if (!e) return;
+  if (!DM || DM.id !== e.id) DM = { sid: s.id, id: e.id, keep: edKeep(), earlier: false };
+  const k = DM.keep; const sel = k.moveTo || s.date; const t0 = todayStr(), y = daysAgo(1); const early = sel < y;
+  const same = dayEntriesOf(s, e); const unitW = e.kind === 'set' ? 'set' : 'entry';
+  const chip = (ds, label, on) => `<button class="chip ${on ? 'on' : ''} ${ds === s.date ? 'cur' : ''}" data-a="dm-pick" data-d="${ds}" data-testid="dm-${ds === t0 ? 'today' : 'yesterday'}">${label}</button>`;
+  const days = [...Array(14)].map((_, i) => daysAgo(13 - i));
+  const grid = DM.earlier ? `<div class="dgrid" data-testid="dm-grid" style="margin-top:8px">${days.map(ds => { const dd = pd(ds); const n = S.sessions.filter(x => x.date === ds).reduce((a, x) => a + x.entries.length, 0);
+    return `<button class="dcell ${ds === sel ? 'on' : ''}" data-a="dm-pick" data-d="${ds}" data-testid="dm-day-${ds}"><span>${DOW[dd.getDay()].slice(0, 3)}</span><b>${dd.getDate()}</b><i>${ds === s.date ? 'now' : n ? '●' : ''}</i></button>`; }).join('')}</div>` : '';
+  openSheet(`<div data-testid="date-sheet"><h2>Move to which day?</h2><div class="sub" style="margin-bottom:8px">${esc(exName(e.exId))} · now on ${esc(fmtD(s.date))}</div>
+    ${same.length > 1 ? `<div style="margin-bottom:8px" data-testid="dm-scope">${seg('dmscope', [['one', e.kind === 'set' ? 'Set ' + e.set + ' only' : 'This entry only'], ['all', `All ${same.length} ${unitW === 'set' ? 'sets' : 'entries'} here`]], k.moveScope, '')}</div>` : ''}
+    <div class="chips" data-testid="dm-chips">${chip(t0, 'Today', sel === t0)}${chip(y, 'Yesterday', sel === y)}
+      <button class="chip ${early ? 'on' : ''}" data-a="dm-earlier" data-testid="dm-earlier">${early ? esc(fmtD(sel)) + ' ▾' : 'Earlier…'}</button></div>
+    ${grid}
+    <div class="fine" style="margin:8px 0">Moves when you tap Save.</div>
+    <button class="btn ghost" data-a="dm-back" data-testid="dm-back">Back</button></div>`);
+}
+function renumberSets(ses, exIds) {
+  exIds.forEach(exId => { const by = {};
+    ses.entries.filter(x => x.kind === 'set' && x.exId === exId).sort((a, b) => a.ts - b.ts || (a.set || 0) - (b.set || 0)).forEach(x => { by[x.mId] = (by[x.mId] || 0) + 1; x.set = by[x.mId]; }); });
+}
+function moveToDate(sid, ids, date) {
+  const src = sesById(sid); if (!src || !date || date === src.date) return null;
+  const ents = src.entries.filter(x => ids.includes(x.id)); if (!ents.length) return null;
+  const existed = sessionOn(src, date); const dst = existed || newSessionLike(src, date);
+  const exs = [...new Set(ents.map(x => x.exId))];
+  const nums = [...src.entries, ...dst.entries].filter(x => x.kind === 'set' && exs.includes(x.exId)).map(x => ({ e: x, set: x.set }));
+  const srcBefore = src.entries.slice(), dstExBefore = dst.exIds.slice(), srcPos = S.sessions.indexOf(src);
+  src.entries = src.entries.filter(x => !ids.includes(x.id)); dst.entries.push(...ents);
+  exs.forEach(x => { if (!dst.exIds.includes(x)) dst.exIds.push(x); });
+  renumberSets(src, exs); renumberSets(dst, exs);
+  const removed = sesEmpty(src); if (removed) S.sessions = S.sessions.filter(x => x !== src);
+  const touched = () => [...new Set(ents.map(x => x.id).concat(nums.map(b => b.e.id)))];
+  markDirty(touched()); persist();
+  return { src, dst, ents, removed, created: !existed, undo: () => {
+    dst.entries = dst.entries.filter(x => !ents.includes(x));
+    src.entries = srcBefore.filter(x => ents.includes(x) || src.entries.includes(x)).concat(src.entries.filter(x => !srcBefore.includes(x)));
+    if (removed && !S.sessions.includes(src)) S.sessions.splice(Math.min(srcPos, S.sessions.length), 0, src);
+    nums.forEach(b => { b.e.set = b.set; });
+    if (!existed && sesEmpty(dst)) S.sessions = S.sessions.filter(x => x !== dst); else dst.exIds = dstExBefore.concat(dst.exIds.filter(x => !dstExBefore.includes(x) && dst.entries.some(en => en.exId === x)));
+    markDirty(touched()); persist();
+    if (location.hash.includes(dst.id) && !S.sessions.includes(dst)) return go(location.hash.replace(dst.id, src.id));
+    render();
+  } };
 }
 
 /* ---------------- View: Progress ---------------- */
@@ -1847,6 +1936,10 @@ function render() {
   centerChips(false);
   if (updateReady) showUpdate();
   setWake(!!curEx || !!lock);
+  if (curEx && !pendingDone && !lock && guardSeen !== location.hash) { // once per exercise open
+    guardSeen = location.hash; const gs = pastGuardSes();
+    if (gs && !$('#sheet-root').innerHTML) openPastGuard(gs, null);
+  }
 }
 
 /* ---------------- Event handling ---------------- */
@@ -1865,10 +1958,15 @@ document.addEventListener('click', async ev => {
     case 'update-reload': return applyUpdate();
     case 'check-update': { if (!swReg) return toast('Updates need the installed app'); toast('Checking…'); await checkForUpdate(); return toast(updateReady ? 'Update ready — tap the bar to reload' : `Up to date (v${APP_VERSION})`); }
     case 'start': return startSession(ds.t, ds.m);
-    case 'pick-date': workDate = ds.d >= todayStr() ? null : ds.d; closeSheet(null); if (route()[0] !== 'today') return go('#/today'); return render();
-    case 'date-today': workDate = null; closeSheet(null); if (route()[0] !== 'today') return go('#/today'); return render();
+    case 'pick-date': setWorkDate(ds.d); closeSheet(null); if (route()[0] !== 'today') return go('#/today'); return render();
+    case 'date-today': setWorkDate(null); closeSheet(null); if (route()[0] !== 'today') return go('#/today'); return render();
     case 'date-earlier': return openEarlierSheet();
     case 'entry-mach': MV = null; return openMoveSheet();
+    case 'entry-date': DM = null; return openDateSheet();
+    case 'dmscope': if (DM) DM.keep.moveScope = ds.v; return openDateSheet();
+    case 'dm-earlier': if (DM) DM.earlier = !DM.earlier; return openDateSheet();
+    case 'dm-pick': { const dm = DM; DM = null; if (!dm) return; const s = sesById(dm.sid); dm.keep.moveTo = s && ds.d !== s.date ? ds.d : null; return openEntrySheet(dm.sid, dm.id, dm.keep); }
+    case 'dm-back': { const dm = DM; DM = null; if (!dm) return closeSheet(null); return openEntrySheet(dm.sid, dm.id, dm.keep); }
     case 'mvscope': if (MV) MV.scope = ds.v; return openMoveSheet();
     case 'mach-back': { const mv = MV; MV = null; if (!mv) return closeSheet(null); return openEntrySheet(mv.sid, mv.id, mv.keep); }
     case 'mach-move': {
@@ -1935,8 +2033,12 @@ document.addEventListener('click', async ev => {
     case 'tag': { const v = ds.v; pk.tags = pk.tags.includes(v) ? pk.tags.filter(t => t !== v) : pk.tags.concat(v); el.classList.toggle('on', pk.tags.includes(v)); return; }
     case 'cstep': { const f = ds.f; const lim = { dur: [1, 300], dist: [0, 100] }[f]; pk[f] = round1(clamp(round1((+pk[f]) + (+ds.d)), lim[0], lim[1])); return updateCardioUI(p); }
     case 'cset': pk[ds.f] = +ds.v; return updateCardioUI(p);
-    case 'log-set': return logSets([+ds.n]);
+    case 'pg-keep': { const g = PG; PG = null; closeSheet(null); if (!g) return; pastOk = g.date;
+      if (g.act) { const b = $(`.setbar [data-a="${g.act.a}"]${g.act.n ? `[data-n="${g.act.n}"]` : ''}`); if (b) b.click(); } return; }
+    case 'pg-today': { const g = PG; PG = null; closeSheet(null); if (g) switchToToday(g.sid, g.exId); return; }
+    case 'log-set': if (pastGuardSes()) return openPastGuard(pastGuardSes(), { a, n: ds.n }); return logSets([+ds.n]);
     case 'log-all': {
+      if (pastGuardSes()) return openPastGuard(pastGuardSes(), { a });
       const ses = sesById(curEx.sid); const d = P[draftKey(curEx.sid, curEx.exId)];
       const have = setsOf(ses, curEx.exId, d.mId).map(s => s.set);
       const nums = [1, 2, 3].filter(n => !have.includes(n));
@@ -1949,6 +2051,7 @@ document.addEventListener('click', async ev => {
       return logSets(nums);
     }
     case 'log-extra': {
+      if (pastGuardSes()) return openPastGuard(pastGuardSes(), { a });
       const ses = sesById(curEx.sid); const d = P[draftKey(curEx.sid, curEx.exId)];
       const n = nextSetNo(ses, curEx.exId, d.mId);
       const todayN = setsOf(ses, curEx.exId).length;
@@ -1958,8 +2061,8 @@ document.addEventListener('click', async ev => {
       }
       return logSets([n]);
     }
-    case 'log-cardio': return logCardio();
-    case 'lock-start': return openLock();
+    case 'log-cardio': if (pastGuardSes()) return openPastGuard(pastGuardSes(), { a }); return logCardio();
+    case 'lock-start': if (pastGuardSes()) return openPastGuard(pastGuardSes(), { a }); return openLock();
     case 'confirm-log': { const pdn = pendingDone; pendingDone = null; return logSets([pdn.setNo], { secs: pdn.secs }); }
     case 'confirm-discard': pendingDone = null; render(); return toast('Set discarded');
     case 'edit-entry': return openEntrySheet(ds.sid, ds.id);
@@ -1967,7 +2070,15 @@ document.addEventListener('click', async ev => {
       const d = P.ed; const s = sesById(d.sid); const e = s.entries.find(x => x.id === d.id);
       if (e.kind === 'set') { e.add = d.add; e.base = d.noBase ? null : d.base; e.w = round1(d.add + d.base); e.u = unit(); e.reps = d.reps; } else { e.dur = d.dur; e.dist = round1(d.dist); e.level = d.level || 0; }
       e.diff = d.diff; e.tags = d.tags.slice();
-      markDirty([e.id]); persist(); closeSheet(); render(); return toast('Updated');
+      markDirty([e.id]); persist(); closeSheet();
+      if (d.moveTo && d.moveTo !== s.date) {
+        const ids = d.moveScope === 'all' ? dayEntriesOf(s, e).map(x => x.id) : [e.id];
+        const r = moveToDate(s.id, ids, d.moveTo); if (!r) { render(); return toast('Updated'); }
+        if (r.removed && location.hash.includes(s.id)) go(location.hash.replace(s.id, r.dst.id)); else render();
+        const what = r.ents.length === 1 ? (e.kind === 'set' ? 'set' : 'entry') : `${r.ents.length} ${e.kind === 'set' ? 'sets' : 'entries'}`;
+        return toast(`Moved ${what} to ${dayWordLc(d.moveTo).replace(/^on /, '')}`, () => { closeSheet(null); r.undo(); });
+      }
+      render(); return toast('Updated');
     }
     case 'entry-del': {
       const d = P.ed; const s = sesById(d.sid); const idx = s.entries.findIndex(x => x.id === d.id); const [e] = s.entries.splice(idx, 1);

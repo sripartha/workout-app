@@ -307,3 +307,12 @@ body.focus .updbar{bottom:auto;top:calc(env(safe-area-inset-top,0px) + 6px)}
 .selm + .photo-link{min-height:28px;padding:2px 10px;font-size:13px}
 body.focus #app.has-bar{padding-bottom:calc(var(--sab) + 112px)} /* = slim setbar height; avoids scrolling empty space */
 .ts-gm{font-size:11px;color:var(--mut);margin:4px 0 -2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* 2.5.5 past-date guard + set date chip */
+.pastguard{text-align:center;padding:4px 2px 2px}
+.pastguard .pg-ico{font-size:34px;line-height:1}
+.pastguard h2{font-size:22px;margin:6px 0 4px;line-height:1.25}
+.pastguard .sub{margin-bottom:14px}
+.pastguard .btn{min-height:56px;font-size:18px}
+.dpick{min-height:34px;padding:4px 12px;font-size:14px}
+.dpick.past{background:rgba(255,170,60,.18);color:#ffcf8a;border-color:rgba(255,170,60,.55)}
+.chip.cur{outline:1px dashed var(--mut);outline-offset:1px}

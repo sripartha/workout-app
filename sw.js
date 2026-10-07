@@ -4,7 +4,7 @@
  * - catalog.json: network-only (never cached) so machine updates reach the phone.
  * - A new worker waits until the user taps "Update ready" (SKIP_WAITING message), so nothing reloads mid-set.
  * Registered with updateViaCache: 'none' so the browser always re-checks this file. Data lives in IndexedDB/localStorage, never here. */
-const VERSION = 'liftlog-v2.5.4';
+const VERSION = 'liftlog-v2.5.5';
 const SHELL = ['./', 'index.html', 'app.js', 'styles.css', 'manifest.webmanifest',
   'icons/apple-touch-icon.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png'];
 const NET_FIRST = /\/(index\.html|app\.js|styles\.css|sw\.js)?$/i; // "/" (start URL) counts as index.html
