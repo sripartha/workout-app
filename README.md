@@ -120,6 +120,24 @@ the base circles, are folded into one entry for up to 20 s while it hasn't synce
   * Moving to a day that only has a different workout (e.g. Push set → a Pull day) gives the set its own Push session on that day.
     Nothing is merged or dropped.
 
+### One-time repair of hidden sets (v2.5.8)
+Date moves and Undo in 2.5.5/2.5.6 could leave sets that are saved but not shown. The first launch of 2.5.8 checks every session
+once (flag `migrated.repair258`) and fixes, in this order:
+1. **Two sessions for the same day and workout** (Undo brought an emptied day back after that day had been started again). They are
+   merged into the session the app opens. Every set and exercise is moved over, and notes, wrap-up thoughts and tags are combined
+   (the first wrap-up's ratings are kept). Nothing is dropped. The merged-away session's full record stays in the activity log.
+2. **Sets whose exercise was missing from their session's exercise list**, so they weren't shown on that session screen. The
+   exercise is listed again.
+3. **Duplicate set numbers** on one exercise + machine (one set hidden from the Set buttons). Only groups with duplicates are
+   renumbered, in the order the sets were logged. Groups without duplicates keep their numbers.
+
+Each fix is its own activity-log entry (action `repair`) with full before/after values, e.g.
+`Repaired: Chest Press on Tue, Oct 6, 2 hidden sets restored`. If anything was fixed, a one-time toast says
+**Found and restored N hidden sets — see Activity log**. Data with no problems is left untouched. Sets are stored inside their
+session, so a set can't point to a missing session. The checks above cover the states a move could actually leave.
+When the localStorage and IndexedDB copies have the same sets and machines, the newer save now wins (a save counter), so an
+IndexedDB write still in flight at relaunch can't bring back the pre-repair copy.
+
 ### Per-machine cautions
 Besides the exercise-level pinned caution, each machine can carry its own caution (machine editor › *Caution for this machine*).
 It shows in small print on the machine card and as a ⚠️ card when that machine is selected.

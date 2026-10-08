@@ -1,7 +1,7 @@
 /* Lift Log — tap-only workout logger PWA. Plain JS, no build step, no dependencies. */
 'use strict';
 (function () {
-const APP_VERSION = '2.5.7';
+const APP_VERSION = '2.5.8';
 const LB_PER_KG = 2.20462;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -95,6 +95,7 @@ async function photoKeys() { if (DB.db) return DB.keys('photos'); return [...mem
 let S = null; // app state
 let persistChain = Promise.resolve();
 function persist() {
+  S.seq = (+S.seq || 0) + 1; // save counter: breaks ties between the localStorage and IndexedDB copies (2.5.8)
   const json = JSON.stringify(S); // write-through: every tap is saved immediately
   // Always mirror to localStorage first so a failed/evicted IDB write cannot strand the only copy.
   // The state copy outranks the activity-log mirror: if storage is full, drop the journal mirror (IDB keeps the journal) and retry.
@@ -249,6 +250,13 @@ function stateRichness(s) {
   // Lexicographic: entries matter most, then phone machines, then session shells.
   return entries * 1e9 + machines * 1e3 + sessions;
 }
+// 2.5.8: with equal sets and machines, the newer save wins (a repair that merges duplicate sessions has fewer sessions,
+// and an IndexedDB write still in flight at relaunch must not bring the old copy back). Otherwise the richer copy wins.
+function preferB(a, b) {
+  const em = s => stateRichness(s) - (s.sessions || []).length;
+  if (em(a) === em(b) && (+b.seq || 0) !== (+a.seq || 0)) return (+b.seq || 0) > (+a.seq || 0);
+  return stateRichness(b) > stateRichness(a);
+}
 async function loadState() {
   await DB.open();
   let idbRaw = null, lsRaw = null;
@@ -259,7 +267,7 @@ async function loadState() {
   const a = parse(idbRaw), b = parse(lsRaw);
   if (a && b) {
     // Prefer the richer copy if one store was clobbered (empty/older).
-    if (stateRichness(b) > stateRichness(a)) { pre(lsRaw); return b; } pre(idbRaw); return a;
+    if (preferB(a, b)) { pre(lsRaw); return b; } pre(idbRaw); return a;
   }
   if (a) { pre(idbRaw); return a; } if (b) { pre(lsRaw); return b; }
   return seed();
@@ -624,10 +632,10 @@ function confirmSheet(title, msg, ok = 'Delete', cls = 'bad') {
   });
 }
 let toastTimer = null, toastUndo = null, toastMsg = '';
-function toast(msg, undo) {
+function toast(msg, undo, ms) {
   const t = $('#toast'); if (!t) return; toastUndo = undo || null; toastMsg = msg;
   t.innerHTML = `<span data-testid="toast-msg">${esc(msg)}</span>${undo ? '<button data-a="toast-undo" data-testid="toast-undo">UNDO</button>' : ''}`;
-  t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; toastUndo = null; }, undo ? 5000 : 2200);
+  t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; toastUndo = null; }, ms || (undo ? 5000 : 2200));
 }
 async function openPhoto(photoId) {
   const blob = await photoGet(photoId); if (!blob) return toast('Photo not found');
@@ -2544,6 +2552,53 @@ async function maybeSafetyBackup(reason) {
     await saveImportSnapshot(reason || 'safety backup', { kind: 'safety', skipPhotos: true });
   } catch (e) { console.warn('safety backup failed', e); }
 }
+/* 2.5.8 one-time repair (flag S.migrated.repair258) for states that 2.5.5/2.5.6 date moves + Undo could leave behind:
+   (1) two sessions for the same day + template (Undo re-inserted the old day after it had been started again) → merged into the
+       one the app opens (first in the list), nothing dropped: sets, exercises, notes and wrap-up thoughts are combined;
+   (2) sets whose exercise is missing from their session's exercise list (not shown on that session screen) → listed again;
+   (3) duplicate set numbers on one exercise + machine (one of them hidden from the Set buttons) → only that group is renumbered
+       in time order. Each repair is its own activity-log entry with full before/after values. Returns the number of hidden sets. */
+function repairHidden258() {
+  if (!S.migrated) S.migrated = {};
+  if (S.migrated.repair258) return 0;
+  let hidden = 0; const tName = id => (tplById(id) || {}).name || 'Workout';
+  const commit = (label, ids) => { if (ids.length) markDirty([...new Set(ids)]); jCtx = { action: 'repair', label }; persist(); };
+  // (1) duplicate sessions for the same date + template
+  const groups = {}; S.sessions.forEach(x => { const k = x.date + '|' + x.tid; (groups[k] = groups[k] || []).push(x); });
+  Object.values(groups).filter(g => g.length > 1).forEach(g => {
+    const keep = g[0], extra = g.slice(1); let moved = 0; const ids = [];
+    extra.forEach(o => {
+      o.entries.forEach(e => { if (!keep.entries.some(x => x.id === e.id)) { keep.entries.push(e); moved++; ids.push(e.id); } else if (JSON.stringify(keep.entries.find(x => x.id === e.id)) !== JSON.stringify(e)) { const c = Object.assign({}, e, { id: uid() }); keep.entries.push(c); moved++; ids.push(c.id); } });
+      (o.exIds || []).forEach(x => { if (!keep.exIds.includes(x)) keep.exIds.push(x); });
+      Object.entries(o.thoughts || {}).forEach(([k, v]) => { v = String(v || '').trim(); if (!v) return; const cur = String(keep.thoughts[k] || '').trim();
+        keep.thoughts[k] = !cur ? v : cur.includes(v) ? cur : cur + '\n' + v; });
+      if (o.wrap) { if (!keep.wrap) keep.wrap = o.wrap; else { const a = String(keep.wrap.thoughts || '').trim(), b = String(o.wrap.thoughts || '').trim();
+        if (b && !a.includes(b)) keep.wrap.thoughts = a ? a + '\n' + b : b; (o.wrap.tags || []).forEach(t => { keep.wrap.tags = keep.wrap.tags || []; if (!keep.wrap.tags.includes(t)) keep.wrap.tags.push(t); }); } }
+      if (!keep.repeatFrom && o.repeatFrom) keep.repeatFrom = o.repeatFrom;
+      keep.created = Math.min(keep.created || Infinity, o.created || Infinity);
+      if (location.hash.includes(o.id)) history.replaceState(null, '', location.hash.replace(o.id, keep.id));
+    });
+    S.sessions = S.sessions.filter(x => !extra.includes(x));
+    keep.entries.sort((a, b) => a.ts - b.ts);
+    ids.push(...fixSetCollisions(keep)); hidden += moved;
+    markSessionDirty(keep);
+    commit(`Repaired: merged ${g.length} ${tName(keep.tid)} sessions on ${fmtD(keep.date)}, ${moved ? moved + ' hidden ' + (moved === 1 ? 'entry' : 'entries') + ' restored' : 'the extra one was empty'}`, ids);
+  });
+  // (2) sets whose exercise is not on the session's exercise list
+  S.sessions.forEach(x => { const miss = [...new Set(x.entries.map(e => e.exId).filter(id => !x.exIds.includes(id)))];
+    miss.forEach(id => { const n = x.entries.filter(e => e.exId === id).length; x.exIds.push(id); hidden += n;
+      commit(`Repaired: ${exName(id)} on ${fmtD(x.date)}, ${n} hidden ${n === 1 ? 'set' : 'sets'} restored (exercise was missing from the session)`, x.entries.filter(e => e.exId === id).map(e => e.id)); }); });
+  // (3) duplicate set numbers within one exercise + machine
+  S.sessions.forEach(x => {
+    const by = {}; x.entries.forEach(e => { if (e.kind === 'set') (by[e.exId + '|' + e.mId] = by[e.exId + '|' + e.mId] || []).push(e); });
+    Object.values(by).forEach(g => { const n = g.length - new Set(g.map(e => e.set)).size; if (!n) return;
+      const ids = []; g.sort((a, b) => a.ts - b.ts || (a.set || 0) - (b.set || 0)).forEach((e, i) => { if (e.set !== i + 1) { e.set = i + 1; ids.push(e.id); } });
+      hidden += n; const ex = exById(g[0].exId); const multi = ex && ex.machines.length > 1;
+      commit(`Repaired: ${exName(g[0].exId)}${multi ? ' (' + machName(g[0].exId, g[0].mId) + ')' : ''} on ${fmtD(x.date)}, ${n} hidden ${n === 1 ? 'set' : 'sets'} restored`, ids); });
+  });
+  S.migrated.repair258 = true; if (hidden) S.repairNotice = hidden; persist(); // notice survives a relaunch until it has been on screen
+  return hidden;
+}
 (async function boot() {
   S = await loadState();
   S.sessions.forEach(s => s.entries.forEach(e => { if (e.ts > lastTs) lastTs = e.ts; }));
@@ -2557,10 +2612,14 @@ async function maybeSafetyBackup(reason) {
     S.lastAppVersion = APP_VERSION;
     persist();
   } else persist(); // same version: logs only if migrate() changed something
+  try { repairHidden258(); } catch (e) { console.warn('repair failed', e); }
   // Auto-apply published catalog before first paint when possible (first-run setup + updates).
   await checkCatalogUpdate();
   persist();
   render(); registerSW();
+  if (S.repairNotice) { const n = S.repairNotice; // one time: cleared once it has been on screen for 3 s
+    toast(`Found and restored ${n} hidden set${n === 1 ? '' : 's'} — see Activity log`, null, 8000);
+    setTimeout(() => { delete S.repairNotice; persist(); }, 3000); }
   if (navigator.storage && navigator.storage.persist) navigator.storage.persisted().then(p => p || navigator.storage.persist()).catch(() => {});
   scheduleSync(1500);
   window.__liftlog = { state: () => S, persist, syncNow, version: APP_VERSION, buildCSV, journal: () => J, jRestore, jPrune, jMirror, buildExport, wake: () => ({ wanted: wakeWanted, held: !!wakeSentinel }),
