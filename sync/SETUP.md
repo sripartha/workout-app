@@ -29,7 +29,7 @@ You need: the Mac, your iPhone with Lift Log, and the Google account **sripart@g
 1. Lift Log › **Setup** › **Sync to Google Sheet**.
 2. Paste the URL, type the same secret, and tap **Save**, then **Sync now**.
 3. The status should read "Last synced … · 0 pending". To send your whole history once, tap **Re-send all**.
-4. In the sheet you'll see a **Log** tab (one row per set), a **Sessions** tab (one row per workout with your wrap-up), and an **Advice** tab.
+4. In the sheet you'll see a **Log** tab (one row per set), a **Sessions** tab (one row per workout with your wrap-up), an **Activity Log** tab (one row per change, from the app's Setup › Activity log, never deleted), and an **Advice** tab.
 
 From now on it runs by itself. Changes go up a few seconds after you log, right away when you save a wrap-up, and whenever the app goes to the background. When you're offline they wait and go up once you're back online.
 
@@ -42,5 +42,7 @@ Open `YOUR-URL?token=YOUR-SECRET&action=export`. You should see your rows as tex
 
 ## If you ever paste a newer Code.gs
 **Deploy › Manage deployments** → ✏️ pencil → **Version: New version** → **Deploy**. The URL stays the same.
+
+**Lift Log 2.5.7 needs this once.** Paste the new Code.gs (keep your own secret on the `TOKEN` line), then **New version** as above. Until you do, sets keep syncing, the activity log waits on the phone, and Setup › Sync shows "Update Code.gs to sync the Activity Log tab".
 
 **Keep the secret private.** Anyone with both the URL and the secret can read and write your log.

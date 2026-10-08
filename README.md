@@ -16,6 +16,7 @@ At the gym every action is a tap, chip or slider; typing is only for setup.
 | `SPEC.md` | Gherkin acceptance spec (scenario IDs used by the tests) |
 | `tests/e2e.js` | Playwright acceptance suite (iPhone viewport 390×844) |
 | `tests/seed.e2e.js` | Imports a seed backup (default `/workspace/catalog/liftlog-seed.json`) and checks the unset-base flow |
+| `tests/journal.e2e.js` | 2.5.7 activity log: entries, screen, Restore this, storage, retention, export, move/undo regressions |
 | `tests/apps-script.test.js` | Runs `sync/Code.gs` against a fake Spreadsheet |
 | `screenshots/` | Screenshots from the test run |
 
@@ -86,6 +87,39 @@ only affects new sets.
   in. To correct one old set, open it and adjust its weight.
 * Dumbbell machines (name contains "Dumbbell") label the weight **(per dumbbell)**: log one dumbbell, not the pair.
 
+### Activity log (v2.5.7)
+Setup › **🧾 Activity log**. Every data change on the phone appends one entry: time, action (set add / edit / delete, move-date,
+move-machine, session create / delete, wrap-up save, base change, catalog merge, version migration, restore, import, undo), the ids
+and the **full before and after value** of every record it touched (sets, sessions, machines, exercises, templates, settings,
+schedule, advice). Entries are only ever appended, never edited (quick repeats on the same record, such as typing notes or tapping
+the base circles, are folded into one entry for up to 20 s while it hasn't synced yet).
+* **Readable list**, newest first, grouped by day, e.g. `7:12 AM · Moved Chest Press S3 from Tue, Oct 6 → Mon, Oct 5`. The day
+  chips at the top filter to one day. *Before / after* opens the raw values.
+* **Restore this** (on delete and move entries) puts the record back as it was before that entry: a deleted set goes back
+  into its session (the session itself is re-created if it was deleted, e.g. with its wrap-up), a moved set goes back to its day
+  or machine. Nothing else is removed. If a set logged since then took the same set number, the sets on that machine are
+  renumbered by time so none is hidden. The restore is logged too (`restore`, with a link to the entry), and the row shows *restored ✓*.
+* **Storage**: kept apart from the workout data, in IndexedDB (keys `jn:<time>:<id>`) plus a localStorage copy of the newest
+  entries (~1.5 MB). If one copy is lost, the other fills it back in. If storage gets tight, the workout data is saved first.
+* **Retention**: an entry is removed only when it is older than 90 days **and** outside the newest 5,000, so you always keep 90 days
+  or 5,000 entries (whichever is more), and anything from the last 30 days is never removed.
+* **Backups and sheet**: JSON backups include the log (`journal`). Importing a backup adds the log entries you don't have yet. Sync
+  sends it to the sheet's **Activity Log** tab (see the sync section).
+* **Upgrading** from 2.5.6 doesn't touch existing data. The first launch logs `App updated 2.5.6 → 2.5.7`.
+
+**Moving sets between days: what 2.5.7 checked and fixed.**
+* *Fixed*: **Undo** (after a date move, a set delete or a machine move) used to put the old set numbers back without checking for
+  conflicts. If a set had been logged meanwhile and taken that number, two sets shared one number and one was hidden from the Set
+  buttons (it was still saved). Undo and Restore now renumber the machine's sets by time when numbers clash.
+* *Fixed*: suppose moving all of a day's sets removed that day's empty session, and you then opened the same day and workout
+  again before tapping **Undo**. Undo used to create a second session for that day. It now returns the sets into the re-opened one.
+  Undo also finds the moved sets wherever they are now, even if they were edited in the meantime.
+* *Checked, nothing found*:
+  * A session is removed only when it has no sets, no wrap-up and no notes, so a session that still holds sets is never deleted.
+  * Renumbering after a move numbers each machine's sets 1…n in time order, so numbers don't collide.
+  * Moving to a day that only has a different workout (e.g. Push set → a Pull day) gives the set its own Push session on that day.
+    Nothing is merged or dropped.
+
 ### Per-machine cautions
 Besides the exercise-level pinned caution, each machine can carry its own caution (machine editor › *Caution for this machine*).
 It shows in small print on the machine card and as a ⚠️ card when that machine is selected.
@@ -96,7 +130,7 @@ Images are resized on-device to max 1600 px JPEG (~80–300 KB) and stored in In
 **📷 Photo** link; tapping it opens the picture full-screen, tap to close. Photos are in JSON backups (base64), never in CSV or sync.
 
 ### Backup, CrunchBot, advice
-* **Download JSON backup** / **Import JSON backup** (Setup): full round-trip incl. photos. Import replaces data on the phone (asks first).
+* **Download JSON backup** / **Import JSON backup** (Setup): full round-trip incl. photos. Import replaces data on the phone (asks first). Backups include the activity log.
 * **Download CSV**: one row per set / cardio entry, no photos. Columns:
   `date, template, mode, exercise, machine, gym, type, set, weight (total), added_weight, base_weight, unit, reps, difficulty,
   set_seconds, duration_min, distance, distance_unit, level, tags, note, thoughts`.
@@ -150,7 +184,7 @@ app goes to the background. Failures are retried with back-off (30 s → 10 min)
 1. Go to https://sheets.new and create a Google Sheet, e.g. "Lift Log".
 2. In the Sheet: **Extensions › Apps Script**. Delete the sample code and paste the whole of `sync/Code.gs`.
 3. In the pasted code change `var TOKEN = 'CHANGE-ME-…'` to your own long random secret (e.g. 30+ random letters/digits). Click **Save**.
-4. Optional: choose the `setup` function in the toolbar and click **Run** to create the `Log`, `Sessions` and `Advice` tabs
+4. Optional: choose the `setup` function in the toolbar and click **Run** to create the `Log`, `Sessions`, `Activity Log` and `Advice` tabs
    (approve the permission prompt for your own account). They are also created automatically on first sync.
 5. **Deploy › New deployment** → gear icon → **Web app**. *Description*: Lift Log sync. *Execute as*: **Me**.
    *Who has access*: **Anyone** (the token protects it). Click **Deploy**, authorise, then **copy the Web app URL** (ends in `/exec`).
@@ -167,12 +201,16 @@ tab": paste the new `Code.gs` and **Deploy › Manage deployments › Edit › V
 duration_min, distance, distance_unit, level, tags, note, thoughts, updated_at`
 (`id` is a stable entry id: edits update the row in place, deletes remove it; renaming a machine re-sends its rows). Values are
 written by header name, and missing columns are appended automatically, so a Sheet created by an older version keeps working
-(after updating, paste the new `Code.gs` and deploy a **New version**). `Advice` tab: columns
+(after updating, paste the new `Code.gs` and deploy a **New version**). `Activity Log` tab (v2.5.7): one row per activity-log entry —
+`id, time, day, local_time, action, summary, records, before, after, app_version, ref, ts` (before/after are JSON, cut at 45,000 characters
+per cell; the full values stay on the phone and in JSON backups), upserted by `id` and never deleted. It is a separate tab because `Log` already
+holds one row per set. Until the new `Code.gs` is deployed, log entries stay queued on the phone and Setup › Sync says "Update Code.gs to
+sync the Activity Log tab". Your set rows keep syncing as before. `Advice` tab: columns
 `exercise | machine | note | date` — rows typed there (by you or your assistant) are pulled down on each sync and shown as Advice.
 
 Protocol: `POST <url>` with body (sent as `text/plain` to avoid a CORS preflight)
-`{"token":"…","upserts":[{"id":"…","date":"…",…}],"deletes":["id",…],"sessions":[{"session_id":"…",…}],"sessionDeletes":["…"],"wantAdvice":true}`
-→ `{"ok":true,"upserted":n,"deleted":n,"sessionsUpserted":n,"sessionsDeleted":n,"advice":[…]}`.
+`{"token":"…","upserts":[{"id":"…","date":"…",…}],"deletes":["id",…],"sessions":[{"session_id":"…",…}],"sessionDeletes":["…"],"journal":[{"id":"…","summary":"…",…}],"wantAdvice":true}`
+→ `{"ok":true,"upserted":n,"deleted":n,"sessionsUpserted":n,"sessionsDeleted":n,"journalUpserted":n,"advice":[…]}`.
 `GET <url>?token=…&action=advice` returns the advice list.
 
 ## Tests
@@ -189,7 +227,7 @@ the demo data through the first-run setup UI, fakes the date to walk through Mon
 touch events (WebKit), mocks the Apps Script endpoint, and simulates offline by stopping the server.
 
 ## Known limitations
-* Data lives on one phone (plus whatever you export/sync). Import replaces; it does not merge.
+* Data lives on one phone (plus whatever you export/sync).
 * Sync is one-way phone → Sheet (plus Advice pulled back). Editing the Log tab in the Sheet is not pulled into the app.
 * iOS may stop a background push when the app is swiped away; the queue is kept and re-sent on next open (rows are upserted by id, so no duplicates).
 * "Send to CrunchBot" just opens the share sheet; you pick the destination app.

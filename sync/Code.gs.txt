@@ -11,8 +11,11 @@
  *   { token, app: "liftlog",
  *     upserts: [ {id, date, template, ...CSV columns} ], deletes: [id, ...],              -> "Log" tab (one row per set/cardio entry)
  *     sessions: [ {session_id, date, template, mode, duration_min, ...} ], sessionDeletes: [session_id, ...],  -> "Sessions" tab
+ *     journal: [ {id, time, day, local_time, action, summary, records, before, after, app_version, ref, ts} ],     -> "Activity Log" tab
  *     wantAdvice: true }
- * Response: { ok: true, upserted, deleted, sessionsUpserted, sessionsDeleted, advice: [ {exercise, machine, note, date} ] }
+ * Response: { ok: true, upserted, deleted, sessionsUpserted, sessionsDeleted, journalUpserted, advice: [ {exercise, machine, note, date} ] }
+ * The "Activity Log" tab (app 2.5.7+) is append-only: rows are upserted by entry id and never deleted by the app.
+ * (The existing "Log" tab keeps holding one row per set; the activity log uses its own tab so set rows are never mixed up.)
  *
  * Restore (read everything back, same token):
  *   POST { token, action: "export" }          -> { ok: true, sets: [ {id, date, ...} ], sessions: [ {session_id, ...} ] }
@@ -24,12 +27,14 @@ var TOKEN = 'CHANGE-ME-to-a-long-random-secret';   // must match the token in th
 var LOG_SHEET = 'Log';
 var SESSIONS_SHEET = 'Sessions';
 var ADVICE_SHEET = 'Advice';
+var ACTIVITY_SHEET = 'Activity Log';
 var COLUMNS = ['id', 'date', 'template', 'mode', 'exercise', 'machine', 'gym', 'type', 'set', 'weight', 'added_weight', 'base_weight', 'unit', 'reps',
   'difficulty', 'set_seconds', 'duration_min', 'distance', 'distance_unit', 'level', 'tags', 'note', 'thoughts',
   'session_id', 'exercise_id', 'machine_id', 'template_id', 'ts', 'updated_at'];   // *_id + ts let "Restore from Google Sheet" rebuild the phone exactly
 var SESSION_COLUMNS = ['date', 'template', 'mode', 'duration_min', 'exercises', 'sets', 'volume', 'unit', 'session_difficulty', 'energy', 'chips',
   'thoughts', 'session_id', 'template_id', 'updated_at'];
 var ADVICE_COLUMNS = ['exercise', 'machine', 'note', 'date'];
+var ACTIVITY_COLUMNS = ['id', 'time', 'day', 'local_time', 'action', 'summary', 'records', 'before', 'after', 'app_version', 'ref', 'ts'];
 
 function secret_() {
   var p = PropertiesService.getScriptProperties().getProperty('TOKEN'); // optional override
@@ -107,14 +112,15 @@ function doPost(e) {
 
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
-  var log, ses;
+  var log, ses, act;
   try {
     log = upsertTab_(LOG_SHEET, COLUMNS, 'id', body.upserts, body.deletes);
     ses = upsertTab_(SESSIONS_SHEET, SESSION_COLUMNS, 'session_id', body.sessions, body.sessionDeletes);
+    act = upsertTab_(ACTIVITY_SHEET, ACTIVITY_COLUMNS, 'id', body.journal, []);   // append-only: never deletes
   } finally {
     lock.releaseLock();
   }
-  return json_({ ok: true, upserted: log[0], deleted: log[1], sessionsUpserted: ses[0], sessionsDeleted: ses[1],
+  return json_({ ok: true, upserted: log[0], deleted: log[1], sessionsUpserted: ses[0], sessionsDeleted: ses[1], journalUpserted: act[0],
     advice: body.wantAdvice ? readAdvice_() : [] });
 }
 
@@ -173,4 +179,5 @@ function setup() {
   sheet_(LOG_SHEET, COLUMNS);
   sheet_(SESSIONS_SHEET, SESSION_COLUMNS);
   sheet_(ADVICE_SHEET, ADVICE_COLUMNS);
+  sheet_(ACTIVITY_SHEET, ACTIVITY_COLUMNS);
 }

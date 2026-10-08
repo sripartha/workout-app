@@ -1,7 +1,7 @@
 /* Lift Log — tap-only workout logger PWA. Plain JS, no build step, no dependencies. */
 'use strict';
 (function () {
-const APP_VERSION = '2.5.6';
+const APP_VERSION = '2.5.7';
 const LB_PER_KG = 2.20462;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -97,11 +97,150 @@ let persistChain = Promise.resolve();
 function persist() {
   const json = JSON.stringify(S); // write-through: every tap is saved immediately
   // Always mirror to localStorage first so a failed/evicted IDB write cannot strand the only copy.
-  try { localStorage.setItem('liftlog', json); } catch (e) {}
-  if (!DB.db) return;
-  // Serialize IDB writes so an older in-flight put cannot overwrite a newer state.
-  persistChain = persistChain.then(() => DB.put('kv', 'state', json)).catch(err => console.warn('idb persist failed', err));
+  // The state copy outranks the activity-log mirror: if storage is full, drop the journal mirror (IDB keeps the journal) and retry.
+  try { localStorage.setItem('liftlog', json); } catch (e) { try { localStorage.removeItem(JN_LS); jMirrorBudget = Math.max(100000, jMirrorBudget >> 1); localStorage.setItem('liftlog', json); } catch (e2) {} }
+  if (DB.db) {
+    // Serialize IDB writes so an older in-flight put cannot overwrite a newer state.
+    persistChain = persistChain.then(() => DB.put('kv', 'state', json)).catch(err => console.warn('idb persist failed', err));
+  }
+  try { jTrack(); } catch (e) { console.warn('journal failed', e); } // never let the log break a save
 }
+
+/* ---------------- Activity log / journal (2.5.7) ----------------
+   Append-only. Every persist() compares the saved records with the last journaled copy and appends ONE entry holding the
+   full before/after value of each changed record (sets, sessions, machines, exercises, templates, settings, schedule, advice).
+   Explicit actions (catalog merge, migration, import, restore, undo, erase) label the change; the rest is inferred from the diff.
+   Stored apart from the state: IndexedDB kv keys "jn:<ts>:<id>" + localStorage mirror "liftlog-journal" (newest entries that fit).
+   Retention: an entry is pruned only if it is older than 90 days AND outside the newest 5,000 (so the last 30 days always stay). */
+const JN_PREFIX = 'jn:', JN_LS = 'liftlog-journal', JN_KEEP_DAYS = 90, JN_KEEP_N = 5000;
+let J = [];                 // journal, oldest → newest
+let jSnap = null;           // Map key → JSON of records as of the last entry
+let jCtx = null;            // {action, label, ref} for the next append (explicit actions)
+let jPre = null;            // records of the stored state BEFORE migrate() ran (logged as "version migration")
+let jMirrorBudget = 1500000, jMirrorTimer = null, jChain = Promise.resolve(), jInflight = 0;
+let jTsLast = 0; const jNow = () => (jTsLast = Math.max(Date.now(), jTsLast + 1));
+const jKey = e => JN_PREFIX + String(e.ts).padStart(15, '0') + ':' + e.id;
+function jRecords(s) {
+  const m = new Map(); if (!s) return m;
+  (s.sessions || []).forEach(x => {
+    const rest = Object.assign({}, x); delete rest.entries; m.set('session:' + x.id, JSON.stringify(rest));
+    (x.entries || []).forEach(e => m.set('entry:' + e.id, JSON.stringify(Object.assign({}, e, { sid: x.id, date: x.date, tid: x.tid }))));
+  });
+  Object.values(s.exercises || {}).forEach(ex => {
+    const rest = Object.assign({}, ex); delete rest.machines; m.set('exercise:' + ex.id, JSON.stringify(rest));
+    (ex.machines || []).forEach(mm => m.set('machine:' + ex.id + ':' + mm.id, JSON.stringify(Object.assign({}, mm, { exId: ex.id }))));
+  });
+  (s.templates || []).forEach(t => m.set('template:' + t.id, JSON.stringify(t)));
+  m.set('settings', JSON.stringify(s.settings || {})); m.set('schedule', JSON.stringify(s.schedule || {}));
+  (s.advice || []).forEach(a => m.set('advice:' + a.id, JSON.stringify(a)));
+  return m;
+}
+function jDiff(a, b) {
+  const out = [];
+  b.forEach((v, k) => { const o = a.get(k); if (o === undefined) out.push({ k, type: 'add', before: null, after: JSON.parse(v) }); else if (o !== v) out.push({ k, type: 'mod', before: JSON.parse(o), after: JSON.parse(v) }); });
+  a.forEach((v, k) => { if (!b.has(k)) out.push({ k, type: 'del', before: JSON.parse(v), after: null }); });
+  return out;
+}
+function jTrack() {
+  if (!S || !jSnap) return;
+  const now = jRecords(S); const changes = jDiff(jSnap, now); const ctx = jCtx; jCtx = null;
+  if (!changes.length && !ctx) return;
+  jSnap = now;
+  const d = ctx && ctx.action ? Object.assign(jDescribe(changes), { action: ctx.action }, ctx.label ? { label: ctx.label } : {}) : jDescribe(changes);
+  const prev = J[J.length - 1];
+  // Typing (thoughts) or repeated nudges on the same records: fold into the newest entry while it is still unsynced and < 20 s old.
+  if (!ctx && prev && !prev.ref && prev.action === d.action && /edit|notes|base/.test(d.action) && Date.now() - prev.ts < 20000 && prev.ts > Math.max(+S.sync.jTs || 0, jInflight)
+    && changes.every(c => c.type === 'mod') && prev.changes.length === changes.length && changes.every(c => prev.changes.some(p => p.k === c.k && p.type === 'mod'))) {
+    changes.forEach(c => { prev.changes.find(p => p.k === c.k).after = c.after; });
+    const back = jDescribe(prev.changes); prev.label = back.label;
+    jSave(prev); return;
+  }
+  const entry = { id: 'j' + uid(), ts: jNow(), action: d.action, label: d.label, v: APP_VERSION, changes };
+  if (ctx && ctx.ref) entry.ref = ctx.ref;
+  J.push(entry); jSave(entry);
+  if (S.sync && S.sync.url && S.sync.token) scheduleSync();
+}
+function jSave(entry) {
+  if (DB.db) jChain = jChain.then(() => DB.put('kv', jKey(entry), entry)).catch(err => console.warn('journal idb write failed', err));
+  clearTimeout(jMirrorTimer); jMirrorTimer = setTimeout(jMirror, 250);
+}
+function jMirror() {
+  clearTimeout(jMirrorTimer); jMirrorTimer = null;
+  const parts = []; let size = 2;
+  for (let i = J.length - 1; i >= 0; i--) { const t = JSON.stringify(J[i]); if (size + t.length + 1 > jMirrorBudget && parts.length) break; parts.push(t); size += t.length + 1; }
+  try { localStorage.setItem(JN_LS, '[' + parts.reverse().join(',') + ']'); } catch (e) { jMirrorBudget = Math.max(100000, jMirrorBudget >> 1); try { localStorage.removeItem(JN_LS); } catch (e2) {} }
+}
+async function jLoad() {
+  const byId = new Map();
+  let idb = [];
+  if (DB.db) { try { idb = await DB.tx('kv', 'readonly', st => st.getAll(IDBKeyRange.bound(JN_PREFIX, JN_PREFIX + '\uffff'))) || []; } catch (e) { idb = []; } }
+  idb.forEach(e => e && e.id && byId.set(e.id, e));
+  let ls = []; try { ls = JSON.parse(localStorage.getItem(JN_LS) || '[]'); } catch (e) { ls = []; }
+  const missing = (Array.isArray(ls) ? ls : []).filter(e => e && e.id && !byId.has(e.id)); // mirror has it, IDB lost it → write back
+  missing.forEach(e => byId.set(e.id, e));
+  J = [...byId.values()].sort((a, b) => a.ts - b.ts);
+  if (J.length) jTsLast = Math.max(jTsLast, J[J.length - 1].ts);
+  if (DB.db) missing.forEach(e => { jChain = jChain.then(() => DB.put('kv', jKey(e), e)).catch(() => {}); });
+  jPrune();
+}
+function jPrune() {
+  const cutoff = Date.now() - JN_KEEP_DAYS * DAY_MS; const firstKept = Math.max(0, J.length - JN_KEEP_N);
+  const drop = J.filter((e, i) => i < firstKept && e.ts < cutoff); // older than 90 days AND beyond the newest 5,000
+  if (!drop.length) return;
+  const d = new Set(drop.map(e => e.id)); J = J.filter(e => !d.has(e.id));
+  if (DB.db) drop.forEach(e => { jChain = jChain.then(() => DB.del('kv', jKey(e))).catch(() => {}); });
+  jMirror();
+}
+// Action + readable label from the changed records, e.g. "Moved Chest Press S3 from Tue, Oct 6 → Mon, Oct 5".
+function jDescribe(changes) {
+  const of = p => changes.filter(c => c.k.startsWith(p));
+  const E = of('entry:'), Ss = of('session:'), Mm = of('machine:');
+  const exN = r => (S && S.exercises[r.exId] && S.exercises[r.exId].name) || r.exId || 'Exercise';
+  const mN = r => { const ex = S && S.exercises[r.exId]; const m = ex && ex.machines.find(x => x.id === r.mId); return m ? m.name : 'machine'; };
+  const tN = id => ((S && S.templates.find(t => t.id === id)) || {}).name || 'Workout';
+  const day = d => d ? fmtD(d) : '?';
+  const one = (list, f1, fn) => list.length === 1 ? f1(list[0]) : fn(list);
+  const exs = list => [...new Set(list.map(exN))].join(', ');
+  const wr = r => r.kind === 'cardio' ? `${r.dur} min` : `${fmtW(r.w)}×${r.reps}`;
+  const movedD = E.filter(c => c.type === 'mod' && (c.before.sid !== c.after.sid || c.before.date !== c.after.date));
+  if (movedD.length) { const b = movedD[0].before, a = movedD[0].after;
+    return { action: 'move-date', label: one(movedD, c => `Moved ${exN(c.before)} S${c.before.set} from ${day(c.before.date)} → ${day(c.after.date)}`, l => `Moved ${l.length} ${exs(l.map(c => c.before))} sets from ${day(b.date)} → ${day(a.date)}`) }; }
+  const movedM = E.filter(c => c.type === 'mod' && c.before.mId !== c.after.mId);
+  if (movedM.length) return { action: 'move-machine', label: one(movedM, c => `Moved ${exN(c.before)} S${c.before.set} from ${mN(c.before)} → ${mN(c.after)} (${day(c.after.date)})`, l => `Moved ${l.length} ${exs(l.map(c => c.before))} sets to ${mN(l[0].after)} (${day(l[0].after.date)})`) };
+  const sDel = Ss.filter(c => c.type === 'del'), eDel = E.filter(c => c.type === 'del'), eAdd = E.filter(c => c.type === 'add'), sAdd = Ss.filter(c => c.type === 'add');
+  if (sDel.length) return { action: 'session-delete', label: one(sDel, c => `Deleted ${tN(c.before.tid)} session · ${day(c.before.date)}${eDel.length ? ` (${eDel.length} entr${eDel.length === 1 ? 'y' : 'ies'})` : ''}`, l => `Deleted ${l.length} sessions (${eDel.length} entries)`) };
+  if (eDel.length && !eAdd.length) return { action: 'set-delete', label: one(eDel, c => `Deleted ${exN(c.before)} ${c.before.kind === 'set' ? 'S' + c.before.set + ' ' : ''}· ${wr(c.before)} (${day(c.before.date)})`, l => `Deleted ${l.length} ${exs(l.map(c => c.before))} entries (${day(l[0].before.date)})`) };
+  if (eAdd.length && !eDel.length) return { action: 'set-add', label: one(eAdd, c => `Logged ${exN(c.after)} ${c.after.kind === 'set' ? 'S' + c.after.set + ' ' : ''}· ${wr(c.after)} (${day(c.after.date)})`, l => `Logged ${l.length} ${exs(l.map(c => c.after))} entries · ${wr(l[0].after)} (${day(l[0].after.date)})`) };
+  if (eAdd.length && eDel.length) return { action: 'edit', label: `Changed ${eAdd.length + eDel.length} entries` };
+  if (sAdd.length) return { action: 'session-create', label: one(sAdd, c => `Started ${tN(c.after.tid)} · ${day(c.after.date)}`, l => `Started ${l.length} sessions`) };
+  const sMod = Ss.filter(c => c.type === 'mod');
+  const wrapC = sMod.filter(c => JSON.stringify(c.before.wrap || null) !== JSON.stringify(c.after.wrap || null));
+  if (wrapC.length) return { action: 'wrapup-save', label: `Wrap-up saved · ${tN(wrapC[0].after.tid)} ${day(wrapC[0].after.date)}` };
+  const eMod = E.filter(c => c.type === 'mod');
+  if (eMod.length) { const c = eMod[0], b = c.before, a = c.after; const what = [];
+    if (b.w !== a.w) what.push(`${fmtW(b.w)} → ${fmtW(a.w)}`); if (b.reps !== a.reps) what.push(`reps ${b.reps} → ${a.reps}`); if (b.set !== a.set) what.push(`S${b.set} → S${a.set}`);
+    if (b.diff !== a.diff) what.push(`difficulty ${b.diff} → ${a.diff}`); if (b.dur !== a.dur) what.push(`${b.dur} → ${a.dur} min`);
+    return { action: 'set-edit', label: eMod.length === 1 ? `Edited ${exN(b)} S${a.set || ''} (${day(a.date)})${what.length ? ' · ' + what.join(', ') : ''}` : `Edited ${eMod.length} entries (${exs(eMod.map(x => x.after))})` }; }
+  if (sMod.length) { const th = sMod.filter(c => JSON.stringify(c.before.thoughts || {}) !== JSON.stringify(c.after.thoughts || {}));
+    return th.length ? { action: 'notes', label: `Notes · ${tN(th[0].after.tid)} ${day(th[0].after.date)}` } : { action: 'session-edit', label: `Edited ${tN(sMod[0].after.tid)} session · ${day(sMod[0].after.date)}` }; }
+  const baseC = Mm.filter(c => c.type === 'mod' && (c.before.base !== c.after.base || c.before.bu !== c.after.bu));
+  if (baseC.length === 1 && Mm.length === 1) { const b = baseC[0].before, a = baseC[0].after; return { action: 'base-change', label: `Base ${a.name}: ${b.base === null ? 'not set' : fmtW(b.base) + ' ' + (b.bu || 'lb')} → ${a.base === null ? 'not set' : fmtW(a.base) + ' ' + (a.bu || 'lb')}` }; }
+  if (Mm.length) return { action: 'machine-edit', label: one(Mm, c => `${c.type === 'add' ? 'Added' : c.type === 'del' ? 'Removed' : 'Edited'} machine ${(c.after || c.before).name}`, l => `Updated ${l.length} machines`) };
+  const Ex = of('exercise:'), T = of('template:'), A = of('advice:');
+  if (Ex.length) return { action: 'exercise-edit', label: one(Ex, c => `${c.type === 'add' ? 'Added' : c.type === 'del' ? 'Removed' : 'Edited'} exercise ${(c.after || c.before).name}`, l => `Updated ${l.length} exercises`) };
+  if (T.length) return { action: 'template-edit', label: one(T, c => `Edited template ${(c.after || c.before).name}`, l => `Updated ${l.length} templates`) };
+  if (A.length) return { action: 'advice', label: `${A.length} advice note${A.length === 1 ? '' : 's'} updated` };
+  if (changes.some(c => c.k === 'settings')) return { action: 'settings', label: 'Changed settings' };
+  if (changes.some(c => c.k === 'schedule')) return { action: 'settings', label: 'Changed schedule' };
+  return { action: 'edit', label: changes.length ? `Changed ${changes.length} records` : 'No data changes' };
+}
+function jMergeEntries(list) { // from a backup file: append entries we don't have (append-only, by id)
+  const have = new Set(J.map(e => e.id)); let n = 0;
+  (Array.isArray(list) ? list : []).forEach(e => { if (e && e.id && e.ts && Array.isArray(e.changes) && !have.has(e.id)) { J.push(e); have.add(e.id); n++; if (DB.db) jChain = jChain.then(() => DB.put('kv', jKey(e), e)).catch(() => {}); } });
+  if (n) { J.sort((a, b) => a.ts - b.ts); jMirror(); }
+  return n;
+}
+
 function stateRichness(s) {
   if (!s) return -1;
   const entries = (s.sessions || []).reduce((n, x) => n + (x.entries || []).length, 0);
@@ -116,12 +255,13 @@ async function loadState() {
   if (DB.db) { try { idbRaw = await DB.get('kv', 'state'); } catch (e) {} }
   try { lsRaw = localStorage.getItem('liftlog'); } catch (e) {}
   const parse = raw => { try { return raw ? migrate(JSON.parse(raw)) : null; } catch (e) { console.warn('bad state', e); return null; } };
+  const pre = raw => { try { jPre = jRecords(JSON.parse(raw)); } catch (e) { jPre = null; } }; // pre-migration records for the activity log
   const a = parse(idbRaw), b = parse(lsRaw);
   if (a && b) {
     // Prefer the richer copy if one store was clobbered (empty/older).
-    return stateRichness(b) > stateRichness(a) ? b : a;
+    if (stateRichness(b) > stateRichness(a)) { pre(lsRaw); return b; } pre(idbRaw); return a;
   }
-  if (a) return a; if (b) return b;
+  if (a) { pre(idbRaw); return a; } if (b) { pre(lsRaw); return b; }
   return seed();
 }
 
@@ -483,9 +623,9 @@ function confirmSheet(title, msg, ok = 'Delete', cls = 'bad') {
     sheetResolve = res;
   });
 }
-let toastTimer = null, toastUndo = null;
+let toastTimer = null, toastUndo = null, toastMsg = '';
 function toast(msg, undo) {
-  const t = $('#toast'); if (!t) return; toastUndo = undo || null;
+  const t = $('#toast'); if (!t) return; toastUndo = undo || null; toastMsg = msg;
   t.innerHTML = `<span data-testid="toast-msg">${esc(msg)}</span>${undo ? '<button data-a="toast-undo" data-testid="toast-undo">UNDO</button>' : ''}`;
   t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; toastUndo = null; }, undo ? 5000 : 2200);
 }
@@ -543,7 +683,7 @@ async function buildExport() {
   const photos = {};
   for (const k of await photoKeys()) { const b = await photoGet(k); if (b) photos[k] = await blobToDataURL(b); }
   const state = JSON.parse(JSON.stringify(S)); state.sync = Object.assign({}, state.sync, { token: '' }); // never export the secret
-  return { app: 'liftlog', schema: 2, version: APP_VERSION, exportedAt: new Date().toISOString(), state, photos };
+  return { app: 'liftlog', schema: 2, version: APP_VERSION, exportedAt: new Date().toISOString(), state, photos, journal: J.slice() }; // 2.5.7: activity log included
 }
 const CSV_COLS = ['date', 'template', 'mode', 'exercise', 'machine', 'gym', 'type', 'set', 'weight', 'added_weight', 'base_weight', 'unit', 'reps', 'difficulty',
   'set_seconds', 'duration_min', 'distance', 'distance_unit', 'level', 'tags', 'note', 'thoughts'];
@@ -783,6 +923,8 @@ async function importJSON(file) {
     await applyPhotos(obj.photos || {}, false);
     const r = mergeCatalog(obj.state);
     if (obj.catalogVersion) S.lastAppliedCatalogVersion = +obj.catalogVersion;
+    jMergeEntries(obj.journal);
+    jCtx = { action: 'import', label: `Import · update machines (+${r.addedM} new, ${r.updatedM} updated)` };
     persist(); await refreshSnapCount(); go('#/today');
     toast(`Updated machines (+${r.addedM} new, ${r.updatedM} updated)`);
     return;
@@ -792,6 +934,8 @@ async function importJSON(file) {
   const keepSync = S.sync;
   S = migrate(obj.state); S.setupDone = true;
   if (!S.sync.token && keepSync.token && (!S.sync.url || S.sync.url === keepSync.url)) { S.sync.url = keepSync.url; S.sync.token = keepSync.token; }
+  jMergeEntries(obj.journal);
+  jCtx = { action: 'import', label: `Import · full restore from ${obj.exportedAt ? obj.exportedAt.slice(0, 10) : 'backup'}` };
   persist(); await refreshSnapCount(); go('#/today');
   toast(`Restored ${(obj.state.sessions || []).length} sessions`);
 }
@@ -829,6 +973,7 @@ async function undoLastImport(opts = {}) {
   }
   S.setupDone = !!S.setupDone || Object.keys(S.exercises).length > 0;
   if (snap.catalogVersion) S.lastAppliedCatalogVersion = snap.catalogVersion;
+  jCtx = { action: 'undo', label: isCatalog ? 'Undo catalog update (workouts kept)' : `Undo import (${snap.label || 'snapshot'})` };
   persist(); await saveImportSnaps(list); go('#/today');
   if (!quiet) toast(isCatalog ? 'Catalog update undone (workouts kept)' : 'Import undone');
 }
@@ -867,6 +1012,7 @@ async function applyPublishedCatalog(obj, { reason } = {}) {
   }
   S.lastAppliedCatalogVersion = ver;
   S.setupDone = true;
+  jCtx = { action: 'catalog-merge', label: `Catalog update · ${r.addedEx} new exercise${r.addedEx === 1 ? '' : 's'}, ${r.addedM} new machine${r.addedM === 1 ? '' : 's'}, ${r.updatedM} checked` };
   persist(); await refreshSnapCount();
   return r;
 }
@@ -933,6 +1079,21 @@ function scheduleSync(delay = 4000) {
   if (!S.sync.url || !S.sync.token) return;
   clearTimeout(syncTimer); syncTimer = setTimeout(() => syncNow(), delay);
 }
+// Activity log → "Activity Log" tab (append-only, upsert by entry id). Sheets caps a cell at 50,000 characters.
+const JN_CELL = 45000;
+const jCell = v => { const t = JSON.stringify(v); return t.length > JN_CELL ? t.slice(0, JN_CELL) + '…[truncated: full copy is on the phone and in backups]' : t; };
+function jRow(e) {
+  const d = new Date(e.ts);
+  return { id: e.id, time: d.toISOString(), day: ymd(d), local_time: d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }), action: e.action, summary: e.label,
+    records: e.changes.map(c => c.type + ' ' + c.k).join('; ').slice(0, JN_CELL), before: jCell(e.changes.filter(c => c.before).map(c => ({ k: c.k, v: c.before }))),
+    after: jCell(e.changes.filter(c => c.after).map(c => ({ k: c.k, v: c.after }))), app_version: e.v || '', ref: e.ref || '', ts: e.ts };
+}
+const jPending = () => { const w = +(S.sync.jTs || 0); let n = 0; for (let i = J.length - 1; i >= 0 && J[i].ts > w; i--) n++; return n; };
+function jBatch() {
+  const w = +(S.sync.jTs || 0); const rows = []; let size = 0, maxTs = w;
+  for (const e of J) { if (e.ts <= w) continue; const r = jRow(e); const n = JSON.stringify(r).length; if (rows.length && (size + n > 300000 || rows.length >= 200)) break; rows.push(r); size += n; maxTs = e.ts; }
+  return { rows, maxTs };
+}
 async function syncNow(opts = {}) {
   const sy = S.sync; if (!sy.url || !sy.token) return;
   if (syncing) { syncAgain = true; return; }
@@ -941,11 +1102,11 @@ async function syncNow(opts = {}) {
   const dirty = sy.dirty.slice(), deleted = sy.deleted.slice();
   const index = {}; S.sessions.forEach(s => s.entries.forEach(e => { index[e.id] = [s, e]; }));
   const upserts = dirty.filter(id => index[id]).map(id => Object.assign({ id }, entryRow(index[id][0], index[id][1])));
-  const ps = pendingSessions();
+  const ps = pendingSessions(); const jb = jBatch(); jInflight = jb.maxTs;
   sy.lastAttempt = Date.now();
   try {
     const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null; const to = setTimeout(() => ctl && ctl.abort(), 20000);
-    const payload = JSON.stringify({ token: sy.token, app: 'liftlog', upserts, deletes: deleted, sessions: ps.ups.map(u => u.row), sessionDeletes: ps.dels, wantAdvice: true });
+    const payload = JSON.stringify({ token: sy.token, app: 'liftlog', upserts, deletes: deleted, sessions: ps.ups.map(u => u.row), sessionDeletes: ps.dels, journal: jb.rows, wantAdvice: true });
     // keepalive lets a small push survive the app being backgrounded; if cut off, the queue is re-sent later (upserts are idempotent)
     const res = await fetch(sy.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, redirect: 'follow', signal: ctl && ctl.signal,
       keepalive: !!opts.hidden && payload.length < 60000, body: payload });
@@ -958,16 +1119,18 @@ async function syncNow(opts = {}) {
     // only mark session rows synced when the script understood them (an older Code.gs without a Sessions tab ignores them)
     if (typeof out.sessionsUpserted === 'number') { sy.note = ''; ps.ups.forEach(u => { sy.sesHash[u.row.session_id] = u.k; }); ps.dels.forEach(id => { delete sy.sesHash[id]; }); }
     else if (ps.ups.length || ps.dels.length) sy.note = 'Update Code.gs to sync the Sessions tab';
+    if (typeof out.journalUpserted === 'number') sy.jTs = Math.max(+(sy.jTs || 0), jb.maxTs); // older Code.gs ignores the log: keep it queued
+    else if (jb.rows.length && !sy.note) sy.note = 'Update Code.gs to sync the Activity Log tab';
     sy.last = Date.now(); sy.err = ''; retryDelay = 30000;
     if (Array.isArray(out.advice)) mergeAdvice(out.advice, 'sheet');
     persist();
-    const more = typeof out.sessionsUpserted === 'number' && (pendingSessions().ups.length || pendingSessions().dels.length);
+    const more = (typeof out.sessionsUpserted === 'number' && (pendingSessions().ups.length || pendingSessions().dels.length)) || (typeof out.journalUpserted === 'number' && jPending() > 0);
     if (sy.dirty.length || sy.deleted.length || more) scheduleSync(1000);
   } catch (e) {
     sy.err = (e && e.name === 'AbortError') ? 'timed out' : String(e && e.message || e);
     persist(); clearTimeout(syncTimer); syncTimer = setTimeout(() => syncNow(), retryDelay); retryDelay = Math.min(retryDelay * 2, 600000);
   } finally {
-    syncing = false; syncRedirty.clear();
+    syncing = false; syncRedirty.clear(); jInflight = 0;
     if (syncAgain) { syncAgain = false; scheduleSync(300); }
     const el = $('#sync-status'); if (el) el.innerHTML = syncStatusHTML();
   }
@@ -1054,12 +1217,13 @@ function mergeSheetRows(data) {
 function syncStatusHTML() {
   const sy = S.sync; if (!sy.url || !sy.token) return 'Not set up';
   const ps = pendingSessions(); const pending = sy.dirty.length + sy.deleted.length + ps.ups.length + ps.dels.length;
-  return `${sy.last ? 'Last synced ' + new Date(sy.last).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Never synced'} · ${pending} pending${sy.note && !sy.err ? ` · ${esc(sy.note)}` : ''}${sy.err ? ` · <span style="color:var(--bad)">${esc(sy.err)}</span>` : ''}`;
+  const jp = jPending();
+  return `${sy.last ? 'Last synced ' + new Date(sy.last).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Never synced'} · ${pending} pending${jp ? ` · ${jp} log entr${jp === 1 ? 'y' : 'ies'} to send` : ''}${sy.note && !sy.err ? ` · ${esc(sy.note)}` : ''}${sy.err ? ` · <span style="color:var(--bad)">${esc(sy.err)}</span>` : ''}`;
 }
 window.addEventListener('online', () => scheduleSync(500));
-window.addEventListener('pagehide', () => { if (S) persist(); });
+window.addEventListener('pagehide', () => { if (S) persist(); if (jMirrorTimer) jMirror(); });
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') { if (S) { persist(); if (S.sync.dirty.length || S.sync.deleted.length || pendingSessions().ups.length) syncNow({ hidden: true }); } }
+  if (document.visibilityState === 'hidden') { if (S) { persist(); if (S.sync.dirty.length || S.sync.deleted.length || pendingSessions().ups.length || jPending()) syncNow({ hidden: true }); } if (jMirrorTimer) jMirror(); }
   else {
     if (wakeWanted) setWake(true); // the OS drops wake locks when the page is hidden
     if (S) checkCatalogUpdate();
@@ -1640,7 +1804,8 @@ function moveSets(sid, ids, newMid) {
     e.add = add; e.base = nb; e.w = round1(add + (nb || 0)); e.mId = newMid; e.set = ++n;
   });
   markDirty(ents.map(e => e.id)); persist();
-  return { m, ents, undo: () => { before.forEach(b => Object.assign(b.e, { mId: b.mId, set: b.set, base: b.base, w: b.w, u: b.u })); markDirty(before.map(b => b.e.id)); persist(); render(); } };
+  return { m, ents, undo: () => { before.forEach(b => Object.assign(b.e, { mId: b.mId, set: b.set, base: b.base, w: b.w, u: b.u }));
+    const fx = S.sessions.filter(q => q.entries.some(x => before.some(b => b.e === x))).flatMap(fixSetCollisions); markDirty(before.map(b => b.e.id).concat(fx)); persist(); render(); } };
 }
 
 /* Change a set's date (2.5.5): move one entry (or all of that exercise's entries that day) to the same template's
@@ -1666,6 +1831,15 @@ function openDateSheet() {
     <div class="fine" style="margin:8px 0">Moves when you tap Save.</div>
     <button class="btn ghost" data-a="dm-back" data-testid="dm-back">Back</button></div>`);
 }
+// Two sets with the same number on one machine hide one of them from the Set buttons. Undo paths and restores call this:
+// a group with duplicate numbers is renumbered in time order (groups without duplicates keep their numbers). Returns changed ids.
+function fixSetCollisions(ses) {
+  const fixed = [], groups = {};
+  ses.entries.forEach(e => { if (e.kind === 'set') (groups[e.exId + '|' + e.mId] = groups[e.exId + '|' + e.mId] || []).push(e); });
+  Object.values(groups).forEach(g => { const nums = g.map(e => e.set); if (new Set(nums).size === nums.length) return;
+    g.sort((a, b) => a.ts - b.ts || (a.set || 0) - (b.set || 0)).forEach((e, i) => { if (e.set !== i + 1) { e.set = i + 1; fixed.push(e.id); } }); });
+  return fixed;
+}
 function renumberSets(ses, exIds) {
   exIds.forEach(exId => { const by = {};
     ses.entries.filter(x => x.kind === 'set' && x.exId === exId).sort((a, b) => a.ts - b.ts || (a.set || 0) - (b.set || 0)).forEach(x => { by[x.mId] = (by[x.mId] || 0) + 1; x.set = by[x.mId]; }); });
@@ -1684,13 +1858,20 @@ function moveToDate(sid, ids, date) {
   const touched = () => [...new Set(ents.map(x => x.id).concat(nums.map(b => b.e.id)))];
   markDirty(touched()); persist();
   return { src, dst, ents, removed, created: !existed, undo: () => {
-    dst.entries = dst.entries.filter(x => !ents.includes(x));
-    src.entries = srcBefore.filter(x => ents.includes(x) || src.entries.includes(x)).concat(src.entries.filter(x => !srcBefore.includes(x)));
-    if (removed && !S.sessions.includes(src)) S.sessions.splice(Math.min(srcPos, S.sessions.length), 0, src);
-    nums.forEach(b => { b.e.set = b.set; });
-    if (!existed && sesEmpty(dst)) S.sessions = S.sessions.filter(x => x !== dst); else dst.exIds = dstExBefore.concat(dst.exIds.filter(x => !dstExBefore.includes(x) && dst.entries.some(en => en.exId === x)));
-    markDirty(touched()); persist();
-    if (location.hash.includes(dst.id) && !S.sessions.includes(dst)) return go(location.hash.replace(dst.id, src.id));
+    // 2.5.7 hardening: the moved sets are found wherever they are now (even if their day was deleted or the data was replaced),
+    // a session re-created for the old day in the meantime receives them instead of a duplicate session, and numbers never collide.
+    const live = ents.map(x => { const ses = S.sessions.find(q => q.entries.some(en => en.id === x.id)); return ses ? ses.entries.find(en => en.id === x.id) : x; });
+    S.sessions.forEach(q => { q.entries = q.entries.filter(en => !ents.some(x => x.id === en.id)); });
+    let home = S.sessions.includes(src) ? src : S.sessions.find(q => q.date === src.date && q.tid === src.tid);
+    if (!home) { home = src; src.entries = []; S.sessions.splice(Math.min(srcPos, S.sessions.length), 0, src); }
+    if (home === src) { const order = srcBefore.map(x => x.id); home.entries = home.entries.concat(live).sort((a, b) => { const ia = order.indexOf(a.id), ib = order.indexOf(b.id); return ia < 0 || ib < 0 ? 0 : ia - ib; }); }
+    else home.entries.push(...live);
+    live.forEach(x => { if (!home.exIds.includes(x.exId)) home.exIds.push(x.exId); });
+    nums.forEach(b => { const cur = live.find(x => x.id === b.e.id) || b.e; cur.set = b.set; });
+    const fx = fixSetCollisions(home).concat(S.sessions.includes(dst) ? fixSetCollisions(dst) : []);
+    if (!existed && S.sessions.includes(dst) && sesEmpty(dst)) S.sessions = S.sessions.filter(x => x !== dst); else if (S.sessions.includes(dst)) dst.exIds = dstExBefore.concat(dst.exIds.filter(x => !dstExBefore.includes(x) && dst.entries.some(en => en.exId === x)));
+    markDirty(touched().concat(fx)); persist();
+    if (location.hash.includes(dst.id) && !S.sessions.includes(dst)) return go(location.hash.replace(dst.id, home.id));
     render();
   } };
 }
@@ -1843,13 +2024,65 @@ function viewMachineEdit(exId, mId) {
 }
 
 /* ---------------- View: Settings ---------------- */
+/* ---------------- View: Activity log (2.5.7) ---------------- */
+const J_RESTORABLE = new Set(['set-delete', 'session-delete', 'move-date', 'move-machine']);
+let jShow = 150;
+function viewJournal(day) {
+  const dayOf = e => ymd(new Date(e.ts));
+  const counts = {}; J.forEach(e => { const d = dayOf(e); counts[d] = (counts[d] || 0) + 1; });
+  const days = Object.keys(counts).sort().reverse();
+  const list = J.filter(e => !day || dayOf(e) === day).slice().reverse();
+  const restored = new Set(J.filter(e => e.ref).map(e => e.ref));
+  const tm = ts => new Date(ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const chip = (d, label, n) => `<a class="chip sm ${(d || '') === (day || '') ? 'on' : ''}" href="#/set/log${d ? '/' + d : ''}" data-testid="jday-${d || 'all'}">${esc(label)}${n != null ? ` <span class="jn">${n}</span>` : ''}</a>`;
+  const brief = v => { if (v == null) return '—'; const o = Object.assign({}, v); delete o.tags; delete o.note; const t = JSON.stringify(o); return t.length > 220 ? t.slice(0, 220) + '…' : t; };
+  let lastDay = null;
+  const rows = list.slice(0, jShow).map(e => {
+    const d = dayOf(e); const head = !day && d !== lastDay ? `<h3 class="jhead">${esc(dayWord(d))}${d === todayStr() || d === daysAgo(1) ? ' · ' + esc(fmtD(d)) : ''}</h3>` : ''; lastDay = d;
+    const can = J_RESTORABLE.has(e.action) && e.changes.some(c => c.before && (c.k.startsWith('entry:') || c.k.startsWith('session:')));
+    return `${head}<div class="jrow" data-testid="jrow" data-id="${e.id}" data-action="${esc(e.action)}">
+      <div class="jt"><b>${esc(tm(e.ts))}</b> · ${esc(e.label)}</div>
+      <div class="row jmeta"><span class="sub grow">${esc(e.action)} · ${e.changes.length} record${e.changes.length === 1 ? '' : 's'}${restored.has(e.id) ? ' · restored ✓' : ''}</span>
+        ${can ? `<button class="chip sm jrest" data-a="j-restore" data-id="${e.id}" data-testid="j-restore">${restored.has(e.id) ? 'Restore again' : 'Restore this'}</button>` : ''}</div>
+      ${e.changes.length ? `<details class="jdet"><summary>Before / after</summary>${e.changes.slice(0, 40).map(c => `<div class="jc"><b>${esc(c.type)}</b> ${esc(c.k)}<div class="jb">before: ${esc(brief(c.before))}</div><div class="ja">after: ${esc(brief(c.after))}</div></div>`).join('')}${e.changes.length > 40 ? `<div class="sub">…${e.changes.length - 40} more (full detail in Export backup / sheet)</div>` : ''}</details>` : ''}
+    </div>`; }).join('');
+  return `<div class="top"><a class="back" href="#/settings">‹ Setup</a></div><h1>Activity log</h1>
+    <div class="sub">Every change on this phone, newest first. Kept 90+ days (at least 5,000 entries; the last 30 days are never removed). Included in backups${S.sync.url ? ' and synced to the sheet\'s "Activity Log" tab' : ''}.</div>
+    <div class="jdays" data-testid="jdays">${chip(null, 'All', J.length)}${days.slice(0, 30).map(d => chip(d, d === todayStr() ? 'Today' : d === daysAgo(1) ? 'Yesterday' : fmtD(d), counts[d])).join('')}</div>
+    <div data-testid="jlist">${rows || '<div class="empty">No activity yet.</div>'}</div>
+    ${list.length > jShow ? `<button class="btn ghost" data-a="j-more" data-testid="j-more">Show more (${list.length - jShow} older)</button>` : ''}`;
+}
+/* "Restore this": put deleted / moved records back exactly as they were before that entry (sets, their session). Logged itself. */
+function jRestore(id) {
+  const e = J.find(x => x.id === id); if (!e) return toast('Entry not found');
+  const touched = new Set(), ids = [];
+  const isPrimary = c => c.type === 'del' || (c.type === 'mod' && (c.before.sid !== c.after.sid || c.before.mId !== c.after.mId || c.before.date !== c.after.date));
+  // sessions that this entry deleted come back first (wrap-up, notes, exercise list as they were)
+  e.changes.filter(c => c.k.startsWith('session:') && c.before && !sesById(c.before.id) && c.type === 'del').forEach(c => { const x = JSON.parse(JSON.stringify(c.before)); x.entries = []; S.sessions.push(x); });
+  e.changes.filter(c => c.k.startsWith('entry:') && c.before && isPrimary(c)).forEach(c => {
+    const b = JSON.parse(JSON.stringify(c.before)); const sid = b.sid, date = b.date, tid = b.tid; delete b.sid; delete b.date; delete b.tid;
+    S.sessions.forEach(q => { if (q.entries.some(x => x.id === b.id)) { q.entries = q.entries.filter(x => x.id !== b.id); touched.add(q); } });
+    let home = sesById(sid) || S.sessions.find(q => q.date === date && q.tid === tid);
+    if (!home) { const t = tplById(tid); home = { id: sid, date, tid, mode: 'solo', repeatFrom: null, exIds: t ? t.exIds.slice() : [], entries: [], thoughts: {}, created: Date.now() }; S.sessions.push(home); }
+    home.entries.push(b); if (!home.exIds.includes(b.exId)) home.exIds.push(b.exId); touched.add(home); ids.push(b.id);
+  });
+  if (!ids.length) return toast('Nothing to restore');
+  const fx = []; touched.forEach(q => { if (!q.entries.some(x => ids.includes(x.id))) renumberSets(q, [...new Set(ids.map(i => (e.changes.find(c => c.k === 'entry:' + i) || {}).before).filter(Boolean).map(b => b.exId))]); fx.push(...fixSetCollisions(q)); });
+  // a session this entry created (e.g. the move's target day) goes away only if nothing is left in it
+  e.changes.filter(c => c.k.startsWith('session:') && c.type === 'add').forEach(c => { const q = sesById(c.after.id); if (q && sesEmpty(q)) S.sessions = S.sessions.filter(x => x !== q); });
+  const renum = [...touched].flatMap(q => q.entries.filter(x => x.kind === 'set').map(x => x.id));
+  markDirty([...new Set(ids.concat(fx, renum))]);
+  jCtx = { action: 'restore', label: 'Restored · ' + e.label, ref: e.id }; persist(); render();
+  toast(`Restored ${ids.length === 1 ? '1 entry as it was' : ids.length + ' entries as they were'}`);
+}
 function viewSettings() {
   const st = S.settings; const tplOpts = cur => `<option value="">Rest</option>${S.templates.map(t => `<option value="${t.id}" ${t.id === cur ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}`;
   const days = [1, 2, 3, 4, 5, 6, 0];
   return `<h1>Setup</h1><div class="sub">Typing is only needed here. At the gym everything is taps.</div>
   <div class="row verrow" data-testid="app-version"><span class="grow">Lift Log <b>v${APP_VERSION}</b>${updateReady ? ' · <span style="color:var(--acc)">update ready</span>' : ''}</span>
     <button class="chip sm" data-a="check-update" data-testid="check-update">Check for update</button></div>
-  <div style="height:10px"></div><a class="btn" href="#/setup">✨ Run setup wizard (bulk add exercises & machines)</a>
+  <div style="height:10px"></div><a class="btn" href="#/set/log" data-testid="open-log">🧾 Activity log <span class="sub">· every change, with Restore</span></a>
+  <a class="btn" href="#/setup">✨ Run setup wizard (bulk add exercises & machines)</a>
   <h2>Units</h2>${seg('set-unit', [['lb', 'Pounds (lb)'], ['kg', 'Kilograms (kg)']], st.unit)}
   <h3>Weight step</h3><div class="chips">${(st.unit === 'kg' ? [1, 2.5, 5] : [2.5, 5, 10]).map(v => `<button class="chip ${v === step() ? 'on' : ''}" data-a="set-step" data-v="${v}">${v} ${st.unit}</button>`).join('')}</div>
   <h3>Default reps</h3><div class="chips">${[8, 10, 12, 15].map(v => `<button class="chip ${v === st.defaultReps ? 'on' : ''}" data-a="set-reps" data-v="${v}">${v}</button>`).join('')}</div>
@@ -1938,6 +2171,7 @@ function render() {
   else if (r[0] === 'setup') { html = viewSetup(r[1]); tab = 'settings'; }
   else if (r[0] === 'set' && r[1] === 't') { html = viewTplEdit(r[2]); tab = 'settings'; }
   else if (r[0] === 'set' && r[1] === 'ex') { html = viewExList(); tab = 'settings'; }
+  else if (r[0] === 'set' && r[1] === 'log') { html = viewJournal(r[2] || null); tab = 'settings'; }
   else if (r[0] === 'set' && r[1] === 'e') { html = viewExEdit(r[2]); tab = 'settings'; }
   else if (r[0] === 'set' && r[1] === 'm') { html = viewMachineEdit(r[2], r[3]); tab = 'settings'; }
   else html = viewToday();
@@ -1967,7 +2201,8 @@ document.addEventListener('click', async ev => {
     case 'sheet-cancel': return closeSheet(null);
     case 'ask-ok': return closeSheet(($('#ask-input').value || '').trim());
     case 'confirm-ok': return closeSheet(true);
-    case 'toast-undo': if (toastUndo) toastUndo(); $('#toast').hidden = true; toastUndo = null; return;
+    case 'toast-undo': { const u = toastUndo; toastUndo = null; $('#toast').hidden = true; if (!u) return;
+      jCtx = { action: 'undo', label: 'Undo · ' + toastMsg }; try { u(); } finally { if (jCtx && jCtx.action === 'undo') { persist(); jCtx = null; } } return; }
     case 'update-reload': return applyUpdate();
     case 'check-update': { if (!swReg) return toast('Updates need the installed app'); toast('Checking…'); await checkForUpdate(); return toast(updateReady ? 'Update ready — tap the bar to reload' : `Up to date (v${APP_VERSION})`); }
     case 'start': return startSession(ds.t, ds.m);
@@ -1990,6 +2225,10 @@ document.addEventListener('click', async ev => {
       return toast(`Moved ${r.ents.length === 1 ? 'Set → ' : r.ents.length + ' sets → '}${r.m.name}`, () => { closeSheet(null); r.undo(); });
     }
     case 'repeat': return startSession(ds.t, 'solo', ds.sid);
+    case 'j-restore': { const e = J.find(x => x.id === ds.id); if (!e) return;
+      if (!await confirmSheet('Restore this?', `Puts back what this changed, as it was: “${e.label}”. Nothing else is removed, and the restore is logged too.`, 'Restore', 'pri')) return;
+      return jRestore(ds.id); }
+    case 'j-more': jShow += 150; return render();
     case 'finish': { const s = sesById(ds.sid); syncNow(); if (!s || (!s.entries.length && !s.wrap)) { toast('Saved. Nice work!'); return go('#/today'); }
       W = null; wrapReturn = '#/today'; return go(`#/w/${s.id}`); }
     case 'open-wrap': W = null; wrapReturn = `#/h/${ds.sid}`; return go(`#/w/${ds.sid}`);
@@ -2103,7 +2342,10 @@ document.addEventListener('click', async ev => {
     case 'entry-del': {
       const d = P.ed; const s = sesById(d.sid); const idx = s.entries.findIndex(x => x.id === d.id); const [e] = s.entries.splice(idx, 1);
       markDeleted([e.id]); persist(); closeSheet(); render();
-      return toast(e.kind === 'set' ? `Set ${e.set} deleted` : 'Entry deleted', () => { s.entries.splice(idx, 0, e); markDirty([e.id]); persist(); render(); });
+      return toast(e.kind === 'set' ? `Set ${e.set} deleted` : 'Entry deleted', () => { // a set logged meanwhile may have taken this number
+        const home = S.sessions.includes(s) ? s : (S.sessions.find(q => q.date === s.date && q.tid === s.tid) || (S.sessions.push(s), s));
+        if (home.entries.some(x => x.id === e.id)) return; home.entries.splice(Math.min(idx, home.entries.length), 0, e);
+        markDirty([e.id].concat(fixSetCollisions(home))); persist(); render(); });
     }
     case 'entry-prev': {
       const s = sesById(ds.sid); const cur = s.entries.find(x => x.id === ds.id); if (!cur || cur.kind !== 'set') return;
@@ -2200,7 +2442,7 @@ document.addEventListener('click', async ev => {
       if (!u || !tk) return toast('Enter the sheet URL and token first');
       if (!await confirmSheet('Restore from Google Sheet?', "Adds any sets and sessions from your sheet that aren't on this phone. Nothing on this phone is removed or changed.", 'Restore', 'pri')) return;
       S.sync.url = u; S.sync.token = tk; persist(); toast('Reading your sheet…');
-      try { const data = await fetchSheetRows(); const r = mergeSheetRows(data); await persist(); render();
+      try { const data = await fetchSheetRows(); const r = mergeSheetRows(data); jCtx = { action: 'restore', label: `Restore from Google Sheet · +${r.sets} entr${r.sets === 1 ? 'y' : 'ies'}, ${r.sessions} new session${r.sessions === 1 ? '' : 's'}` }; await persist(); render();
         return toast(`Restored ${r.sets} entr${r.sets === 1 ? 'y' : 'ies'} in ${r.sessions} new session${r.sessions === 1 ? '' : 's'}${r.wraps ? ` · ${r.wraps} wrap-up${r.wraps === 1 ? '' : 's'}` : ''} · ${r.kept} already here`); }
       catch (e) { return toast('Restore failed: ' + (e && e.message || e)); }
     }
@@ -2210,7 +2452,7 @@ document.addEventListener('click', async ev => {
 async function eraseAllData() {
   try { if (DB.db) await DB.clear('photos'); else memPhotos.clear(); } catch (e) {}
   try { await saveImportSnaps([]); } catch (e) {}
-  S = seed(); persist(); Object.keys(P).forEach(k => delete P[k]);
+  S = seed(); jCtx = { action: 'erase', label: 'Erased all data on this phone (everything removed is listed here)' }; persist(); Object.keys(P).forEach(k => delete P[k]);
   go('#/today');
 }
 async function setMEPhoto(file) {
@@ -2305,20 +2547,23 @@ async function maybeSafetyBackup(reason) {
 (async function boot() {
   S = await loadState();
   S.sessions.forEach(s => s.entries.forEach(e => { if (e.ts > lastTs) lastTs = e.ts; }));
+  try { await jLoad(); } catch (e) { console.warn('journal load failed', e); J = []; }
+  jSnap = jPre || jRecords(S); jPre = null; // anything migrate() changed shows up in the first entry below
   await refreshSnapCount();
   // On app version change: snapshot first so an upgrade path can never strand the only copy.
   if (S.lastAppVersion !== APP_VERSION) {
     if (S.lastAppVersion) await maybeSafetyBackup('before upgrade ' + S.lastAppVersion + ' → ' + APP_VERSION);
+    jCtx = { action: 'migration', label: S.lastAppVersion ? `App updated ${S.lastAppVersion} → ${APP_VERSION}` : `App started (${APP_VERSION})` };
     S.lastAppVersion = APP_VERSION;
     persist();
-  }
+  } else persist(); // same version: logs only if migrate() changed something
   // Auto-apply published catalog before first paint when possible (first-run setup + updates).
   await checkCatalogUpdate();
   persist();
   render(); registerSW();
   if (navigator.storage && navigator.storage.persist) navigator.storage.persisted().then(p => p || navigator.storage.persist()).catch(() => {});
   scheduleSync(1500);
-  window.__liftlog = { state: () => S, persist, syncNow, version: APP_VERSION, buildCSV, wake: () => ({ wanted: wakeWanted, held: !!wakeSentinel }),
+  window.__liftlog = { state: () => S, persist, syncNow, version: APP_VERSION, buildCSV, journal: () => J, jRestore, jPrune, jMirror, buildExport, wake: () => ({ wanted: wakeWanted, held: !!wakeSentinel }),
     mergeCatalog, saveImportSnapshot, loadImportSnaps, refreshSnapCount, checkCatalogUpdate, undoLastImport, eraseAllData, maybeSafetyBackup };
 })();
 })();
