@@ -16,6 +16,7 @@ At the gym every action is a tap, chip or slider; typing is only for setup.
 | `SPEC.md` | Gherkin acceptance spec (scenario IDs used by the tests) |
 | `tests/e2e.js` | Playwright acceptance suite (iPhone viewport 390×844) |
 | `tests/seed.e2e.js` | Imports a seed backup (default `/workspace/catalog/liftlog-seed.json`) and checks the unset-base flow |
+| `tests/exhistory.e2e.js` | 2.5.9 exercise history, machine tile grid + recency order, Upper-Back Row 10-6 + Nautilus Leverage Incline catalog |
 | `tests/journal.e2e.js` | 2.5.7 activity log: entries, screen, Restore this, storage, retention, export, move/undo regressions |
 | `tests/apps-script.test.js` | Runs `sync/Code.gs` against a fake Spreadsheet |
 | `screenshots/` | Screenshots from the test run |
@@ -86,6 +87,27 @@ only affects new sets.
   60 stays 60), so history, charts, CSV and the Sheet don't change. Only sets logged while the base was *not set* get totals filled
   in. To correct one old set, open it and adjust its weight.
 * Dumbbell machines (name contains "Dumbbell") label the weight **(per dumbbell)**: log one dumbbell, not the pair.
+
+### Exercise history and machine tiles (v2.5.9)
+* **History** (small link at the top right of every exercise screen, beside Edit) opens a **read-only** list of every logged set
+  of that exercise, across all days and machines, newest first and grouped by date. Each row is small print:
+  `machine (location) · S# · working + base = total × reps · difficulty · note chips`. At the top, one line per machine shows
+  **best** (heaviest total, then most reps) and **last**. There are no edit controls, only **‹ Back** (your weight / reps
+  draft is kept). This screen scrolls.
+* **Machine tiles** on the exercise screen wrap into a compact grid (3 per row on iPhone, names up to two lines): every machine is
+  visible without sideways scrolling, with the selected one highlighted and **＋ New** last. With many machines the page may scroll
+  down, but never sideways. A hidden reps control that made the page 14 px too wide is also fixed.
+* **Tile order**: most recently used for this exercise first (time of its latest logged set), then never-used machines in their
+  usual order, **＋ New** last. A small **red dot** marks the most recently used tile. The order is worked out when the screen opens
+  and stays put while you log (no reshuffling mid-exercise).
+* **Machine cues** show again on the exercise screen as one small line under the location. Tap it to read the full cues.
+* Catalog:
+  * **Iso-Lateral Upper-Back Row** (the machine Sri logs on) is really at **10-6**, not 9-6 (there's no row machine at 9-6). It
+    keeps the same id and sets, now has **base 12 lb**, and has the cue "Elbows flared and up; focus on squeezing the back". No
+    other row 9 machine changed.
+  * Incline Press › **Nautilus Leverage Incline Press**, Lakeway 10-10, plate-loaded, base not set yet.
+  * **Base from the catalog never rewrites logged sets** (new in 2.5.9): they keep their saved add / base / total, including sets
+    logged while the base was not set (shown as "+ base?"). Only entering a base on the phone fills those in, as before.
 
 ### Activity log (v2.5.7)
 Setup › **🧾 Activity log**. Every data change on the phone appends one entry: time, action (set add / edit / delete, move-date,

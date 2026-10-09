@@ -1,12 +1,12 @@
 {
  "app": "liftlog",
  "schema": 2,
- "version": "2.5.6",
- "catalogVersion": 1791381704072,
- "exportedAt": "2026-10-07T14:01:45.659775Z",
+ "version": "2.5.9",
+ "catalogVersion": 1791556406846,
+ "exportedAt": "2026-10-09T14:33:28.374257Z",
  "state": {
   "v": 2,
-  "created": 1791381704072,
+  "created": 1791556406846,
   "setupDone": true,
   "lastExport": null,
   "settings": {
@@ -131,6 +131,16 @@
       "loc": "9-10",
       "cues": "Elbows tucked ~30-45° (not flared), handles start around armpit/upper chest, controlled range of motion",
       "caution": "Don't force the bottom position if the right shoulder feels pinchy"
+     },
+     {
+      "id": "m-nautilus-leverage-incline-press",
+      "name": "Nautilus Leverage Incline Press",
+      "base": null,
+      "bu": "lb",
+      "gym": "Lakeway",
+      "loc": "10-10",
+      "cues": "",
+      "caution": ""
      }
     ],
     "pinned": "",
@@ -481,11 +491,11 @@
      {
       "id": "m-iso-lateral-upper-back-row",
       "name": "Iso-Lateral Upper-Back Row",
-      "base": null,
+      "base": 12,
       "bu": "lb",
       "gym": "Lakeway",
-      "loc": "9-6",
-      "cues": "Elbows flared for upper back, one arm at a time, lean forward so chest is firmly on the pad, don't count the set if you sit back and lose chest support · Confirm this is the Upper-Back Row machine",
+      "loc": "10-6",
+      "cues": "Elbows flared and up; focus on squeezing the back · Elbows flared for upper back, one arm at a time, lean forward so chest is firmly on the pad, don't count the set if you sit back and lose chest support · Confirm this is the Upper-Back Row machine",
       "caution": ""
      }
     ],

@@ -1,7 +1,7 @@
 /* Lift Log — tap-only workout logger PWA. Plain JS, no build step, no dependencies. */
 'use strict';
 (function () {
-const APP_VERSION = '2.5.8';
+const APP_VERSION = '2.5.9';
 const LB_PER_KG = 2.20462;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -830,8 +830,10 @@ function applyCatalogFields(phoneM, fileM, ex) {
   // BASE RULE: file "not set" (null) keeps the phone value; a number from the file wins.
   const fileBase = (fileM.base === null || fileM.base === '') ? null : +fileM.base;
   if (fileBase === null || Number.isNaN(fileBase)) return; // keep phone base
-  if (phoneM.base === null) setMachineBase(ex, phoneM, fileBase);
-  else { phoneM.base = fileBase; phoneM.bu = fileM.bu || phoneM.bu || 'lb'; }
+  // 2.5.9: a base from the catalog never rewrites logged sets: they keep their saved add / base / total, even sets logged while
+  // the base was not set (e.g. Upper-Back Row → 12 lb). Only entering the base on the phone fills those in (setMachineBase).
+  phoneM.base = fileBase; phoneM.bu = fileM.bu || phoneM.bu || 'lb';
+  Object.keys(P).forEach(k => { if (P[k] && P[k].mId === phoneM.id && P[k].base !== undefined) { P[k].base = baseOf(phoneM); P[k].noBase = noBase(phoneM); } });
 }
 function mergeCatalog(fileState) {
   // HARD GUARANTEE: catalog merge never clears workouts / sync / settings.
@@ -1513,16 +1515,32 @@ function adviceFor(ex, mId) {
   return `<div data-testid="advice" style="margin:8px 0">${list.map(a => `<div class="row" style="font-size:12px;color:var(--mut);padding:4px 0"><span class="grow"><b>Advice</b>${a.date ? ` (${esc(a.date)})` : ''}${a.machine ? ` · ${esc(a.machine)}` : ''}: ${esc(a.note)}</span>
     <button class="chip sm" data-a="dismiss-advice" data-id="${a.id}" style="min-height:34px">Dismiss</button></div>`).join('')}</div>`;
 }
+/* 2.5.9: machine tiles ordered by most recently used for this exercise (latest logged set's time, newest first); never-used
+   machines follow in their usual order; '+ New' stays last. A red dot marks the most recently used tile. The order is computed
+   when the exercise screen opens and kept while it stays open (logging a set doesn't reshuffle). */
+let mOrder = null, exRouteSeen = null;
+function machOrder(ex) {
+  const key = location.hash;
+  if (!mOrder || mOrder.key !== key || mOrder.exId !== ex.id) {
+    const last = {}; S.sessions.forEach(x => x.entries.forEach(e => { if (e.exId === ex.id && e.mId && (e.ts || 0) > (last[e.mId] || -1)) last[e.mId] = e.ts || 0; }));
+    const base = sortedMachines(ex).map(m => m.id);
+    const used = base.filter(id => last[id] !== undefined).sort((a, b) => last[b] - last[a]);
+    mOrder = { key, exId: ex.id, ids: used.concat(base.filter(id => last[id] === undefined)), recent: used[0] || null };
+  }
+  const known = new Set(mOrder.ids); const extra = sortedMachines(ex).filter(m => !known.has(m.id)).map(m => m.id); // added while open → before New
+  return { list: mOrder.ids.concat(extra).map(id => machById(ex, id)).filter(Boolean), recent: mOrder.recent };
+}
 function machineGrid(ses, ex, mId, mode = 'grid') {
-  const cards = sortedMachines(ex).map(x => {
+  const mo = machOrder(ex);
+  const cards = mo.list.map(x => {
     const todayN = ses ? setsOf(ses, ex.id, x.id).length : 0;
     const l = lastFor(ex.id, x.id, ses ? ses.id : null);
     const lastTxt = todayN ? `${ses.date === todayStr() ? 'today' : 'this day'}: ${compactSets(setsOf(ses, ex.id, x.id))}` : (l ? lastLine(l) : 'no history yet');
-    return `<button class="mcard ${x.id === mId ? 'on' : ''}" data-a="mach" data-m="${x.id}" data-testid="mcard">
+    return `<button class="mcard ${x.id === mId ? 'on' : ''}" data-a="mach" data-m="${x.id}" data-testid="mcard">${x.id === mo.recent ? '<span class="mdot" data-testid="mcard-recent" aria-label="most recently used"></span>' : ''}
       <span class="mn">${esc(x.name)}</span><span class="ml" data-testid="mcard-last">${esc(lastTxt)}</span>
       ${machFine(x) ? `<span class="mf">${machFine(x)}</span>` : ''}${x.caution ? `<span class="mf mcaut" data-testid="mcard-caution">⚠️ ${esc(x.caution)}</span>` : ''}</button>`; }).join('');
-  const add = `<button class="mcard add" data-a="new-mach" data-ex="${ex.id}"><span class="mn">＋ New</span><span class="ml">machine</span></button>`;
-  if (mode === 'strip') return `<div class="mstrip" data-testid="machines">${cards}${add}</div>`;
+  const add = `<button class="mcard add" data-a="new-mach" data-ex="${ex.id}" data-testid="mcard-new"><span class="mn">＋ New</span><span class="ml">machine</span></button>`;
+  if (mode === 'strip') return `<div class="mstrip mwrap" data-testid="machines">${cards}${add}</div>`; // 2.5.9: wraps into a compact grid, never scrolls sideways
   return `<div class="mgrid" data-testid="machines">${cards}${add}</div>`;
 }
 function viewExercise(sid, exId) {
@@ -1592,10 +1610,11 @@ function viewExercise(sid, exId) {
       ${machineGrid(ses, ex, mId, 'strip')}
       </div>`;
   }
-  return `<div class="top"><a class="back" href="#/s/${sid}">‹ ${esc((tplById(ses.tid) || {}).name || 'Session')}</a><a class="back right" style="color:var(--mut);font-size:14px" href="#/set/e/${ex.id}">Edit</a></div>
+  return `<div class="top"><a class="back" href="#/s/${sid}">‹ ${esc((tplById(ses.tid) || {}).name || 'Session')}</a><span class="right exlinks"><a class="back" href="#/s/${sid}/e/${ex.id}/hist" data-testid="ex-history">History</a><a class="back" style="color:var(--mut)" href="#/set/e/${ex.id}">Edit</a></span></div>
     ${pastBanner(ses.date)}<h1 class="ex-title">${esc(ex.name)}</h1>
     ${m ? `<div class="row wrap"><span class="selm">${esc(m.name)}</span>${m.photoId ? `<button class="photo-link" data-a="photo" data-id="${m.photoId}" data-testid="photo-link">📷</button>` : ''}</div>
-      ${machFine(m) ? `<div class="fine" data-testid="loc">${machFine(m)}</div>` : ''}` : ''}
+      ${machFine(m) ? `<div class="fine" data-testid="loc">${machFine(m)}</div>` : ''}
+      ${m.cues ? `<button class="fine cue1" data-a="show-cues" data-m="${m.id}" data-testid="m-cues">🧠 ${esc(m.cues)}</button>` : ''}` : ''}
     ${m ? '' : cuesHTML(ex, m)}
     ${m && m.caution ? `<div class="fine mcaut-line" data-testid="m-caution">⚠️ ${esc(m.caution)}</div>` : ''}
     ${m ? '' : headsUp(ses, ex)}${m ? adviceFor(ex, mId) : ''}
@@ -2031,6 +2050,35 @@ function viewMachineEdit(exId, mId) {
     ${!ME.isNew ? `<button class="btn bad" data-a="me-del">${used ? 'Delete (has history — rename instead)' : 'Delete machine'}</button>` : ''}`;
 }
 
+/* ---------------- View: exercise history (2.5.9, read-only) ----------------
+   Every logged set / entry of one exercise across all days and machines, newest first, grouped by date, small print.
+   Per-machine summary on top (best + last). No edit controls: only Back. This screen scrolls (normal page, tab bar shown). */
+const fmtShort = d => pd(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+function viewExHistory(sid, exId) {
+  const ex = exById(exId); const back = sesById(sid) ? `#/s/${sid}/e/${exId}` : '#/today';
+  if (!ex) return `<div class="empty">Not found. <a href="#/today">Back</a></div>`;
+  const u = unit(); const cv = (v, e) => round1(conv(+v || 0, e.u || 'lb', u));
+  const all = []; S.sessions.forEach(x => x.entries.forEach(e => { if (e.exId === exId) all.push({ e, x }); }));
+  all.sort((a, b) => (b.x.date > a.x.date ? 1 : b.x.date < a.x.date ? -1 : 0) || (b.e.ts || 0) - (a.e.ts || 0) || (b.e.set || 0) - (a.e.set || 0));
+  const mOf = e => machById(ex, e.mId);
+  const mLabel = e => { const m = mOf(e); return m ? esc(m.name) + (m.loc ? ` <span class="hloc">(${esc(m.loc)})</span>` : '') : '(deleted machine)'; };
+  const wtxt = e => { if (e.kind === 'cardio') return cardioSummary(e);
+    const add = e.add != null ? cv(e.add, e) : null, base = e.base == null ? null : cv(e.base, e);
+    const tot = e.base === null ? null : round1(dispW(e));
+    const w = add == null ? `${fmtW(dispW(e))} ${u}` : base === null ? `${fmtW(add)} + base? ${u}` : base ? `${fmtW(add)} + ${fmtW(base)} = ${fmtW(tot)} ${u}` : `${fmtW(tot)} ${u}`;
+    return `${w} × ${e.reps}`; };
+  const chips = e => [...(e.tags || []).map(t => `<span class="pill">${esc(t)}</span>`), e.note ? `<span class="pill hnote">📝 ${esc(e.note)}</span>` : ''].join('');
+  // per-machine summary: best (heaviest total, then most reps; longest for cardio) and last
+  const byM = {}; all.forEach(r => { (byM[r.e.mId] = byM[r.e.mId] || []).push(r); });
+  const short = r => r.e.kind === 'cardio' ? cardioSummary(r.e) : `${fmtW(r.e.base === null ? cv(r.e.add, r.e) : dispW(r.e))}${r.e.base === null ? '+base?' : ''}×${r.e.reps}`;
+  const sum = Object.entries(byM).map(([mId, rs]) => { const best = rs.slice().sort((a, b) => a.e.kind === 'cardio' ? (b.e.dur || 0) - (a.e.dur || 0) : (dispW(b.e) - dispW(a.e)) || (b.e.reps - a.e.reps))[0]; const last = rs[0];
+    return `<div class="hsum-row" data-testid="hsum-row" data-m="${esc(mId)}"><b>${mLabel(last.e)}</b><div class="sub">best <b>${short(best)}</b> · ${esc(fmtShort(best.x.date))} &nbsp;·&nbsp; last <b>${short(last)}</b> · ${esc(fmtShort(last.x.date))} &nbsp;·&nbsp; ${rs.length} ${rs[0].e.kind === 'cardio' ? 'entr' + (rs.length === 1 ? 'y' : 'ies') : 'set' + (rs.length === 1 ? '' : 's')}</div></div>`; }).join('');
+  let lastD = null; const rows = all.map(({ e, x }) => { const head = x.date !== lastD ? `<h3 class="hday" data-testid="hday">${esc(fmtD(x.date))} <span class="sub">· ${esc((tplById(x.tid) || {}).name || 'Workout')}</span></h3>` : ''; lastD = x.date;
+    return `${head}<div class="hrow" data-testid="hrow" data-id="${esc(e.id)}"><span class="hm">${mLabel(e)}</span> · ${e.kind === 'set' ? `<b>S${e.set}</b> · ` : ''}<b>${esc(wtxt(e))}</b>${e.diff ? ` · ${esc(DIFF_SHORT[e.diff] || 'difficulty ' + e.diff)}` : ''}${chips(e) ? ` <span class="hchips">${chips(e)}</span>` : ''}</div>`; }).join('');
+  return `<div class="top"><a class="back" href="${back}" data-testid="hist-back">‹ Back</a></div>
+    <h1 class="ex-title">${esc(ex.name)} · history</h1><div class="sub">Read-only · every logged ${ex.kind === 'cardio' ? 'entry' : 'set'}, newest first · weights in ${u}</div>
+    <div class="exhist" data-testid="ex-hist">${all.length ? `<div class="hsum card" data-testid="hsum">${sum}</div>${rows}` : '<div class="empty">Nothing logged yet.</div>'}</div>`;
+}
 /* ---------------- View: Settings ---------------- */
 /* ---------------- View: Activity log (2.5.7) ---------------- */
 const J_RESTORABLE = new Set(['set-delete', 'session-delete', 'move-date', 'move-machine']);
@@ -2169,7 +2217,9 @@ function viewExEdit(exId) {
 function render() {
   const r = route(); curEx = null; let html = ''; let tab = 'today';
   if (!S.setupDone && (r[0] === 'today' || r[0] === '')) { location.replace('#/setup'); return; }
-  if (r[0] === 's' && r[2] === 'e') html = viewExercise(r[1], r[3]);
+  if (exRouteSeen !== location.hash) { mOrder = null; exRouteSeen = location.hash; } // new screen → recompute machine order
+  if (r[0] === 's' && r[2] === 'e' && r[4] === 'hist') html = viewExHistory(r[1], r[3]);
+  else if (r[0] === 's' && r[2] === 'e') html = viewExercise(r[1], r[3]);
   else if (r[0] === 's') html = viewSession(r[1]);
   else if (r[0] === 'w') html = viewWrap(r[1]);
   else if (r[0] === 'history') { html = viewHistory(); tab = 'history'; }
@@ -2237,6 +2287,9 @@ document.addEventListener('click', async ev => {
       if (!await confirmSheet('Restore this?', `Puts back what this changed, as it was: “${e.label}”. Nothing else is removed, and the restore is logged too.`, 'Restore', 'pri')) return;
       return jRestore(ds.id); }
     case 'j-more': jShow += 150; return render();
+    case 'show-cues': { const ex = curEx && exById(curEx.exId); const m = ex && machById(ex, ds.m); if (!m) return; // 2.5.9: one-line machine cue → full text
+      const c = [ex.cues, m.cues].filter(Boolean).join(' · ');
+      return openSheet(`<div data-testid="cues-sheet"><h2>${esc(m.name)}</h2><div class="sub" style="margin-bottom:8px">${machFine(m)}</div><div class="cues-full">🧠 ${esc(c)}</div><div style="height:12px"></div><button class="btn ghost" data-a="sheet-cancel" data-testid="cues-close">Close</button></div>`); }
     case 'finish': { const s = sesById(ds.sid); syncNow(); if (!s || (!s.entries.length && !s.wrap)) { toast('Saved. Nice work!'); return go('#/today'); }
       W = null; wrapReturn = '#/today'; return go(`#/w/${s.id}`); }
     case 'open-wrap': W = null; wrapReturn = `#/h/${ds.sid}`; return go(`#/w/${ds.sid}`);
