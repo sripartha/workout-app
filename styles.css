@@ -385,3 +385,9 @@ body.focus #app.has-bar{padding-bottom:calc(var(--sab) + 112px)} /* = slim setba
 .setbar-sm .setbtn small{display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px;padding:0 3px}
 .setbar-sm .setbtn small br{display:block}
 .setbar-sm .setbtn small{line-height:1.15}
+/* 2.6.2 machine type chooser (Edit machine) */
+.mtypes{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.mtype{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;padding:10px;border-radius:12px;border:1px solid var(--line);background:var(--bg3);color:var(--fg);cursor:pointer;min-height:64px}
+.mtype span{font-size:11px;color:var(--mut);line-height:1.25}
+.mtype.on{border-color:var(--acc);background:rgba(255,140,40,.12)}
+.mtype.on b{color:var(--acc2)}

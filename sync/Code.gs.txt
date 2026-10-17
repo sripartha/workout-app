@@ -28,7 +28,7 @@ var LOG_SHEET = 'Log';
 var SESSIONS_SHEET = 'Sessions';
 var ADVICE_SHEET = 'Advice';
 var ACTIVITY_SHEET = 'Activity Log';
-var COLUMNS = ['id', 'date', 'template', 'mode', 'exercise', 'machine', 'brand', 'gym', 'type', 'set', 'weight', 'added_weight', 'base_weight', 'per_arm_plates', 'per_arm_weight', 'unit', 'reps',
+var COLUMNS = ['id', 'date', 'template', 'mode', 'exercise', 'machine', 'brand', 'gym', 'type', 'set', 'weight', 'added_weight', 'base_weight', 'machine_type', 'per_arm_plates', 'per_arm_weight', 'unit', 'reps',
   'difficulty', 'set_seconds', 'duration_min', 'distance', 'distance_unit', 'level', 'tags', 'note', 'thoughts',
   'session_id', 'exercise_id', 'machine_id', 'template_id', 'ts', 'updated_at'];   // *_id + ts let "Restore from Google Sheet" rebuild the phone exactly
 var SESSION_COLUMNS = ['date', 'template', 'mode', 'duration_min', 'exercises', 'sets', 'volume', 'unit', 'session_difficulty', 'energy', 'chips',

@@ -1,7 +1,7 @@
 /* Lift Log — tap-only workout logger PWA. Plain JS, no build step, no dependencies. */
 'use strict';
 (function () {
-const APP_VERSION = '2.6.1';
+const APP_VERSION = '2.6.2';
 const LB_PER_KG = 2.20462;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -376,7 +376,7 @@ const fmtTotal = v => v === 0 ? 'BW' : `${round1(v)} ${unit()}`;
 const snap = v => { const st = step(); return Math.max(0, round1(Math.round(v / st) * st)); };
 function machineForDraft(p) {
   const d = P[p]; if (!d || !d.mId) return null;
-  if (p === 'me' && typeof ME !== 'undefined' && ME) return { id: ME.key, weightChips: ME.weightChips, chipBu: ME.chipBu || 'lb', name: ME.name, brand: ME.brand, perSide: meSide(), arms: !!ME.arms };
+  if (p === 'me' && typeof ME !== 'undefined' && ME) return { id: ME.key, weightChips: ME.weightChips, chipBu: ME.chipBu || 'lb', name: ME.name, brand: ME.brand, mtype: ME.mtype };
   if (p === 'ed' && d.sid) { const s = sesById(d.sid); const e = s && s.entries.find(x => x.id === d.id); if (e) return machById(exById(e.exId), d.mId); }
   if (curEx) return machById(exById(curEx.exId), d.mId);
   // entry editor: draft key ed — machine from open sheet context not always available
@@ -392,20 +392,38 @@ const perSideAuto = m => /iso-lateral|plate[- ]?loaded|leverage/i.test(mFull(m))
 /* 2.6.1 (Sri): 'arms work separately' machines (Iso-Lateral: each arm moves its own lever). Entry is plates per arm (stored add = 2 × plates,
    as in 2.6.0), the base is PER ARM, and the headline is the weight one arm moves: plates + base, e.g. 32.5 + 12 = 44.5 lb / arm. Never a
    doubled total. Stored sets are never rewritten; this is display + export only. Shared-load plate machines keep 'X/side · total Y'. */
-const armsOf = m => !!m && !hasChips(m) && m.arms === true;
-const perSideOf = m => !!m && !hasChips(m) && (armsOf(m) || (m.perSide != null ? !!m.perSide : perSideAuto(m)));
+/* 2.6.2 (Sri): ONE machine type per machine (Edit machine; catalog default, phone edits win). Display derives from the stored set + type;
+   stored sets are never rewritten.
+   stack   = single selectorized stack / pin / dumbbells / cable: weight (+ base) as before.
+   dstack  = two independent stacks, one per arm: one weight for both arms, shown 'X lb / arm', never doubled (L/R later, not built).
+   pshared = plates per side onto one shared load (sled): 'X/side · total = 2×X + base'.
+   psplit  = each arm its own lever, plates and base (base per arm): '(plates + base) lb / arm', e.g. 32.5 + 12 = 44.5, never doubled.
+   pshared / psplit enter plates per side/arm (stored add = 2 × per side, as since 2.6.0). Machines without a type yet (phone-added, or
+   before the catalog update) get one from the 2.6.0 / 2.6.1 settings (legacyType). */
+const MTYPES = { stack: 'Stack', dstack: 'Double stack', pshared: 'Plate shared', psplit: 'Plate split' };
+function legacyType(m) {
+  if (!m) return 'stack'; if (m.arms === true && !hasChips(m)) return 'psplit';
+  const ps = m.perSide != null ? !!m.perSide : perSideAuto(m); if (!ps || hasChips(m)) return 'stack';
+  return m.arms === false ? 'pshared' : /iso-lateral/i.test(mFull(m)) ? 'psplit' : 'pshared';
+}
+const mType = m => !m ? 'stack' : (MTYPES[m.mtype] ? m.mtype : legacyType(m));
+const armsOf = m => !!m && !hasChips(m) && mType(m) === 'psplit';
+const dstackOf = m => !!m && mType(m) === 'dstack';
+const perSideOf = m => !!m && !hasChips(m) && (mType(m) === 'pshared' || mType(m) === 'psplit');
 /* 2.6.1: on per-side machines every logged weight shows both numbers, per side and total ("35/side · 82 total"). */
 const entMach = e => e && machById(exById(e.exId), e.mId);
-const psParts = e => { const m = entMach(e); if (!e || e.kind !== 'set' || e.add == null || !perSideOf(m)) return null;
+const psParts = e => { const m = entMach(e); if (!e || e.kind !== 'set' || e.add == null) return null;
+  if (dstackOf(m)) { const arm = e.base === null ? round1(conv(e.add, e.u || 'lb', unit())) : dispW(e); return { dstack: true, arms: true, arm, nob: e.base === null }; }
+  if (!perSideOf(m)) return null;
   const side = round1(conv(e.add, e.u || 'lb', unit()) / 2), base = e.base === null ? null : round1(conv(e.base || 0, e.u || 'lb', unit()));
   return { arms: armsOf(m), side, base, arm: base === null ? null : round1(side + base), tot: e.base === null ? null : dispW(e) }; };
 const armTxt = (side, base, long) => base === null ? `${fmtW(side)}${long ? ' plates' : ''}/arm + base?` : `${fmtW(round1(side + base))}/arm${long && base ? ` (${fmtW(side)} + ${fmtW(base)} base)` : ''}`;
-const psLong = e => { const q = psParts(e); return q && (q.arms ? armTxt(q.side, q.base, true) : `${fmtW(q.side)}/side · ${q.tot === null ? 'base?' : fmtW(q.tot) + ' total'}`); };
-const psShort = e => { const q = psParts(e); return q && (q.arms ? armTxt(q.side, q.base, false) : `${fmtW(q.side)}/side · ${q.tot === null ? '?' : fmtW(q.tot)}`); };
+const psLong = e => { const q = psParts(e); return q && (q.dstack ? `${fmtW(q.arm)}/arm${q.nob ? ' + base?' : ''}` : q.arms ? armTxt(q.side, q.base, true) : `${fmtW(q.side)}/side · ${q.tot === null ? 'base?' : fmtW(q.tot) + ' total'}`); };
+const psShort = e => { const q = psParts(e); return q && (q.dstack ? `${fmtW(q.arm)}/arm` : q.arms ? armTxt(q.side, q.base, false) : `${fmtW(q.side)}/side · ${q.tot === null ? '?' : fmtW(q.tot)}`); };
 const wChip = e => psShort(e) || fmtW(dispW(e)); // set chips / set bar
-const wLong = e => { const q = psParts(e); if (q && q.arms) return q.arm === null ? `${fmtW(q.side)} ${unit()} plates / arm + base?` : `${fmtW(q.arm)} ${unit()} / arm`; return psLong(e) || fmtTotal(dispW(e)); }; // headline
+const wLong = e => { const q = psParts(e); if (q && q.dstack) return `${fmtW(q.arm)} ${unit()} / arm${q.nob ? ' + base?' : ''}`; if (q && q.arms) return q.arm === null ? `${fmtW(q.side)} ${unit()} plates / arm + base?` : `${fmtW(q.arm)} ${unit()} / arm`; return psLong(e) || fmtTotal(dispW(e)); }; // headline
 const hsVal = () => round1(conv(HS_LB, 'lb', unit()));
-const wMode = p => { const m = machineForDraft(p); const d = P[p] || {}; return { ps: perSideOf(m), arms: armsOf(m), hs: hasChips(m) && d.hs ? hsVal() : 0, cable: hasChips(m) }; };
+const wMode = p => { const m = machineForDraft(p); const d = P[p] || {}; return { ps: perSideOf(m), arms: armsOf(m), ds: dstackOf(m), hs: hasChips(m) && d.hs ? hsVal() : 0, cable: hasChips(m) }; };
 const chipOn = (p, xv) => { const w = wMode(p), v = P[p].add; return Math.abs((w.ps ? 2 * xv : xv + w.hs) - v) < 1e-6; };
 const chipToAdd = (p, xv) => { const w = wMode(p); return round1(w.ps ? 2 * xv : xv + w.hs); };
 // a logged cable weight that is a stack chip + 5 → the horseshoe was on
@@ -518,7 +536,7 @@ function pastBanner(date) {
 function compactSets(ents) {
   const out = [];
   ents.forEach(e => {
-    const q0 = psParts(e); const ps = q0 && q0.arms ? psShort(e) : psLong(e); const k = ps ? `${ps} × ${e.reps || '?'}` : `${fmtW(dispW(e))}×${e.reps || '?'}`;
+    const q0 = psParts(e); const ps = q0 && (q0.arms || q0.dstack) ? psShort(e) : psLong(e); const k = ps ? `${ps} × ${e.reps || '?'}` : `${fmtW(dispW(e))}×${e.reps || '?'}`;
     const last = out[out.length - 1];
     if (last && last.k === k) last.n++; else out.push({ k, n: 1, ps: !!ps });
   });
@@ -558,7 +576,7 @@ function baseLineHTML(p) {
       <span class="fdots">${fineDots('base-fine', null, 1, d.mId)}</span>
       <button class="chip sm baselock" data-a="lock-base" data-m="${d.mId}" data-testid="lock-base" aria-label="Lock base">🔒 Lock</button></div>`;
   }
-  return `<div class="baseline base-locked" data-testid="base-line"><span class="bquiet">🔒 Base ${fmtW(d.base)} ${unit()}${wMode(p).arms ? ' / arm' : ''}</span>
+  return `<div class="baseline base-locked" data-testid="base-line"><span class="bquiet">🔒 Base ${fmtW(d.base)} ${unit()}${wMode(p).arms || wMode(p).ds ? ' / arm' : ''}</span>
     <button class="chip sm baselock" data-a="unlock-base" data-m="${d.mId}" data-testid="unlock-base" aria-label="Unlock base to edit">Unlock</button></div>`;
 }
 function weightPicker(p, compact = false) {
@@ -569,7 +587,7 @@ function weightPicker(p, compact = false) {
   const cls = compact ? ' wp-compact' : '';
   const showBase = p !== 'ed'; // entry sheet stays short — base lives on the log screen
   return `<div class="wpick${cls}">${showBase ? baseLineHTML(p) : ''}
-  <div class="wlabel" data-testid="working-label">Working <span class="bquiet">${custom ? '(cable stack)' : wm.arms ? '(plates per arm)' : wm.ps ? '(plates per side)' : /dumbbell/i.test((machineForDraft(p) || {}).name || '') ? '(per dumbbell)' : '(plates / pin)'}</span>${hsBtn}</div>
+  <div class="wlabel" data-testid="working-label">Working <span class="bquiet">${custom ? '(cable stack)' : wm.arms ? '(plates per arm)' : wm.ps ? '(plates per side)' : wm.ds ? '(stack, each arm)' : /dumbbell/i.test((machineForDraft(p) || {}).name || '') ? '(per dumbbell)' : '(plates / pin)'}</span>${hsBtn}</div>
   <div class="row wrow"><span class="fdots">${fineDots('wfine', p, -1)}</span>
   <button class="step" data-a="wstep" data-p="${p}" data-d="-1" aria-label="minus">−</button>
   <div class="grow bigval" id="wv-${p}" data-testid="weight-value">${weightBig(p)}</div>
@@ -579,9 +597,10 @@ function weightPicker(p, compact = false) {
   <div class="total" id="wt-${p}" data-testid="weight-total">${weightTotal(p)}</div></div>`;
 }
 // Big number = working/added weight (what you change every set)
-const weightBig = p => wMode(p).arms ? (P[p].noBase ? `${fmtW(round1(P[p].add / 2))}<small>${unit()} plates / arm</small>` : `${fmtW(round1(P[p].add / 2 + (P[p].base || 0)))}<small>${unit()} / arm</small>`) : wMode(p).ps ? `${fmtW(round1(P[p].add / 2))}<small>${unit()} / side</small>` : `${fmtW(P[p].add)}<small>${unit()}</small>`;
+const weightBig = p => wMode(p).ds ? `${fmtW(round1(P[p].add + (P[p].noBase ? 0 : (P[p].base || 0))))}<small>${unit()} / arm</small>` : wMode(p).arms ? (P[p].noBase ? `${fmtW(round1(P[p].add / 2))}<small>${unit()} plates / arm</small>` : `${fmtW(round1(P[p].add / 2 + (P[p].base || 0)))}<small>${unit()} / arm</small>`) : wMode(p).ps ? `${fmtW(round1(P[p].add / 2))}<small>${unit()} / side</small>` : `${fmtW(P[p].add)}<small>${unit()}</small>`;
 const weightTotal = p => { const d = P[p]; const wm = wMode(p);
   const work = wm.ps ? `2 × ${fmtW(round1(d.add / 2))} per side` : wm.hs ? `${fmtW(round1(d.add - wm.hs))} stack + ${fmtW(wm.hs)} horseshoe` : `${fmtW(d.add)} working`;
+  if (wm.ds) return `<span data-testid="weight-split"><b>${fmtW(round1(d.add + (d.noBase ? 0 : (d.base || 0))))} ${unit()} / arm</b>${!d.noBase && d.base ? ` (${fmtW(d.add)} stack + ${fmtW(d.base)} base)` : ''}</span> <span class="bquiet">(two stacks, same weight each arm)</span>`;
   if (wm.arms) return d.noBase ? `<b>${fmtW(round1(d.add / 2))} plates / arm</b> · <span data-testid="base-not-set">base not set</span> <span class="bquiet">(each arm moves its own weight)</span>`
     : `<span data-testid="weight-split"><b>${fmtW(round1(d.add / 2))} plates + ${fmtW(d.base || 0)} base</b> per arm</span> <span class="bquiet">(each arm moves its own weight)</span>`;
   if (d.noBase) return `Working <b>${fmtW(d.add)} ${unit()}</b>${wm.ps || wm.hs ? ` <span class="bquiet">(${work})</span>` : ''} · <span data-testid="base-not-set">base not set — total filled in once set</span>`;
@@ -747,13 +766,14 @@ async function buildExport() {
   const state = JSON.parse(JSON.stringify(S)); state.sync = Object.assign({}, state.sync, { token: '' }); // never export the secret
   return { app: 'liftlog', schema: 2, version: APP_VERSION, exportedAt: new Date().toISOString(), state, photos, journal: J.slice() }; // 2.5.7: activity log included
 }
-const CSV_COLS = ['date', 'template', 'mode', 'exercise', 'machine', 'brand', 'gym', 'type', 'set', 'weight', 'added_weight', 'base_weight', 'per_arm_plates', 'per_arm_weight', 'unit', 'reps', 'difficulty',
+const CSV_COLS = ['date', 'template', 'mode', 'exercise', 'machine', 'brand', 'gym', 'type', 'set', 'weight', 'added_weight', 'base_weight', 'machine_type', 'per_arm_plates', 'per_arm_weight', 'unit', 'reps', 'difficulty',
   'set_seconds', 'duration_min', 'distance', 'distance_unit', 'level', 'tags', 'note', 'thoughts'];
 function entryRow(s, e) {
   const m = machById(exById(e.exId), e.mId);
   return { date: s.date, template: (tplById(s.tid) || {}).name || '', mode: s.mode, exercise: exName(e.exId), machine: m ? m.name : machName(e.exId, e.mId), brand: m ? m.brand || '' : '', gym: m ? m.gym : '', type: e.kind,
     set: e.set || '', weight: e.kind === 'set' ? (e.base === null ? '' : e.w) : '', added_weight: e.kind === 'set' ? e.add : '', base_weight: e.kind === 'set' ? (e.base === null ? '' : (e.base || 0)) : '',
-    per_arm_plates: e.kind === 'set' && armsOf(m) && e.add != null ? round1(e.add / 2) : '', per_arm_weight: e.kind === 'set' && armsOf(m) && e.add != null && e.base !== null ? round1(e.add / 2 + (e.base || 0)) : '', unit: e.kind === 'set' ? (e.u || 'lb') : '',
+    machine_type: m ? mType(m) : '', per_arm_plates: e.kind === 'set' && armsOf(m) && e.add != null ? round1(e.add / 2) : '',
+    per_arm_weight: e.kind === 'set' && e.add != null && e.base !== null ? (armsOf(m) ? round1(e.add / 2 + (e.base || 0)) : dstackOf(m) ? e.w : '') : '', unit: e.kind === 'set' ? (e.u || 'lb') : '',
     reps: e.reps || '', difficulty: e.diff || '', set_seconds: e.secs || '', duration_min: e.dur || '', distance: e.dist || '', distance_unit: e.kind === 'cardio' ? (e.du || '') : '', level: e.level || '',
     tags: (e.tags || []).join('; '), note: e.note || '', thoughts: (s.thoughts || {})[e.exId] || '',
     session_id: s.id, exercise_id: e.exId, machine_id: e.mId || '', template_id: s.tid || '', ts: e.ts || '' }; // ids: sheet only (restore), not in CSV
@@ -869,6 +889,7 @@ function cloneMachine(m) {
     photoId: m.photoId || undefined, start: m.start || undefined
   };
   if (m.arms) out.arms = true;
+  if (MTYPES[m.mtype]) out.mtype = m.mtype;
   if (Array.isArray(m.weightChips) && m.weightChips.length) { out.weightChips = m.weightChips.slice(); out.chipBu = m.chipBu || 'lb'; }
   return out;
 }
@@ -878,7 +899,7 @@ function cloneMachine(m) {
    for it (catalog.json fieldHistory). Edited fields are kept; everything else follows the catalog as before. Ids never change. */
 const CAT_MF = ['name', 'brand', 'gym', 'loc', 'cues', 'caution', 'base'], CAT_EF = ['name', 'cues', 'pinned'];
 const catNorm = (f, v) => f === 'base' ? ((v === null || v === '' || v === undefined) ? null : +v) : String(v == null ? '' : v);
-const catSnap = (o, fields) => { const r = {}; fields.forEach(f => { r[f] = catNorm(f, o[f]); }); if (fields === CAT_MF) r.arms = !!o.arms; return r; };
+const catSnap = (o, fields) => { const r = {}; fields.forEach(f => { r[f] = catNorm(f, o[f]); }); if (fields === CAT_MF) { r.arms = !!o.arms; r.mtype = MTYPES[o.mtype] ? o.mtype : 'stack'; } return r; };
 function catEdited(phone, f, fileV, hist) {
   const v = catNorm(f, phone[f]);
   if (v === fileV) return false;
@@ -896,8 +917,15 @@ function applyCatalogFields(phoneM, fileM, ex, hist) {
     phoneM.chipBu = fileM.chipBu || 'lb';
   }
   // 2.6.1 arms: follows the catalog unless changed on the phone (a phone without the field yet always takes it)
-  if (phoneM.arms === undefined || (phoneM.cat && 'arms' in phoneM.cat && !!phoneM.arms === phoneM.cat.arms)) { if (fv.arms) phoneM.arms = true; else if (phoneM.arms !== undefined) phoneM.arms = false; }
-  else if (!!phoneM.arms !== fv.arms) kept++;
+  // 2.6.2 machine type: follows the catalog unless set on the phone (2.6.2 Edit machine, or a 2.6.0 Plate entry / 2.6.1 Arms choice)
+  if (fileM.mtype !== undefined) {
+    const c = phoneM.cat || {};
+    if (phoneM.mtype === undefined) {
+      const legacyEdit = phoneM.perSide != null || (phoneM.arms !== undefined && !('arms' in c && !!phoneM.arms === c.arms));
+      if (legacyEdit) { phoneM.mtype = legacyType(phoneM); if (phoneM.mtype !== fv.mtype) kept++; } else phoneM.mtype = fv.mtype;
+    } else if (!('mtype' in c) || phoneM.mtype !== c.mtype) { if (phoneM.mtype !== fv.mtype) kept++; }
+    else phoneM.mtype = fv.mtype;
+  }
   const base0 = phoneM.cat ? phoneM.cat.base : undefined;
   phoneM.cat = fv;
   // BASE RULE: file "not set" (null) keeps the phone value; a number from the file wins unless the base was set on the phone.
@@ -1743,9 +1771,9 @@ function setbarHTML() {
   if (!d || !d.mId) return `<div class="setbar setbar-sm"><div class="inner">${th}</div></div>`;
   if (ex.kind === 'cardio') return `<div class="setbar setbar-sm"><div class="inner">${th}<button class="setbtn all" data-a="log-cardio" data-testid="log-cardio">Log cardio</button></div></div>`;
   const sets = setsOf(ses, ex.id, d.mId); const by = n => sets.find(s => s.set === n);
-  const psm = perSideOf(machById(ex, d.mId)), arm = armsOf(machById(ex, d.mId));
-  const cur = `<span class="cur">${arm ? `${armTxt(round1(d.add / 2), d.noBase ? null : (d.base || 0), false)}<br>×${d.reps}` : psm ? `${fmtW(round1(d.add / 2))}/side<br>${d.noBase ? '?' : fmtW(round1(d.add + d.base))}` : fmtW(round1(d.add + d.base))}×${d.reps}</span>`;
-  const btn = n => { const e = by(n); return e ? `<button class="setbtn logged" data-a="edit-entry" data-sid="${ses.id}" data-id="${e.id}" data-testid="set-${n}">Set ${n} ✓<small>${psParts(e) ? (psParts(e).arms ? `${psShort(e)}<br>×${e.reps}` : `${fmtW(psParts(e).side)}/side<br>${psParts(e).tot === null ? '?' : fmtW(psParts(e).tot)}×${e.reps}`) : `${fmtW(dispW(e))}×${e.reps}`}</small></button>`
+  const psm = perSideOf(machById(ex, d.mId)), arm = armsOf(machById(ex, d.mId)), dsm = dstackOf(machById(ex, d.mId));
+  const cur = `<span class="cur">${dsm ? `${fmtW(round1(d.add + (d.noBase ? 0 : (d.base || 0))))}/arm×${d.reps}` : arm ? `${armTxt(round1(d.add / 2), d.noBase ? null : (d.base || 0), false)}<br>×${d.reps}` : psm ? `${fmtW(round1(d.add / 2))}/side<br>${d.noBase ? '?' : fmtW(round1(d.add + d.base))}` : fmtW(round1(d.add + d.base))}×${d.reps}</span>`;
+  const btn = n => { const e = by(n); return e ? `<button class="setbtn logged" data-a="edit-entry" data-sid="${ses.id}" data-id="${e.id}" data-testid="set-${n}">Set ${n} ✓<small>${psParts(e) ? (psParts(e).dstack ? `${psShort(e)}×${e.reps}` : psParts(e).arms ? `${psShort(e)}<br>×${e.reps}` : `${fmtW(psParts(e).side)}/side<br>${psParts(e).tot === null ? '?' : fmtW(psParts(e).tot)}×${e.reps}`) : `${fmtW(dispW(e))}×${e.reps}`}</small></button>`
     : `<button class="setbtn" data-a="log-set" data-n="${n}" data-testid="set-${n}">Set ${n}<small>${cur}</small></button>`; };
   const remaining = [1, 2, 3].filter(n => !by(n)); const nx = nextSetNo(ses, ex.id, d.mId);
   const all = remaining.length === 3 ? `<button class="setbtn all" data-a="log-all" data-testid="all-sets">All 3</button>`
@@ -2240,7 +2268,7 @@ const knownBrands = () => { const b = new Set(KNOWN_BRANDS); Object.values(S.exe
 const meSide = () => ME ? (ME.perSide != null ? !!ME.perSide : perSideAuto({ brand: ME.brand, name: ME.name })) : false;
 function initME(exId, mId) {
   const ex = exById(exId); const m = mId !== 'new' && machById(ex, mId);
-  ME = { exId, key: mId, isNew: !m, brand: m ? m.brand || '' : '', perSide: m && m.perSide != null ? !!m.perSide : null, arms: !!(m && m.arms), name: m ? m.name : '', gym: m ? m.gym : homeGym(), loc: m ? m.loc : '', cues: m ? m.cues : '', caution: m ? m.caution || '' : '', base: m ? (noBase(m) ? null : baseOf(m)) : 0,
+  ME = { exId, key: mId, isNew: !m, brand: m ? m.brand || '' : '', perSide: m && m.perSide != null ? !!m.perSide : null, mtype: m ? mType(m) : 'stack', name: m ? m.name : '', gym: m ? m.gym : homeGym(), loc: m ? m.loc : '', cues: m ? m.cues : '', caution: m ? m.caution || '' : '', base: m ? (noBase(m) ? null : baseOf(m)) : 0,
     photoId: m ? m.photoId || null : null, origPhoto: m ? m.photoId || null : null, hasStart: m ? !!m.start : ex.kind !== 'cardio',
     startReps: m && m.start ? m.start.reps || null : null };
   // new machine: default the starting weight to the exercise's latest total on any machine (a sensible first guess)
@@ -2269,10 +2297,9 @@ function viewMachineEdit(exId, mId) {
     <div class="row"><button class="step" data-a="me-bstep" data-d="-1">−</button><div class="grow bigval" style="font-size:34px" data-testid="me-base">${ME.base === null ? 'Not set' : `${fmtW(ME.base)}<small>${unit()}</small>`}</div><button class="step" data-a="me-bstep" data-d="1">+</button></div>
     <div class="chips">${bases.map(b => `<button class="chip sm ${ME.base !== null && Math.abs(ME.base - b) < 1e-6 ? 'on' : ''}" data-a="me-base" data-v="${b}">${b}</button>`).join('')}<button class="chip sm ${ME.base === null ? 'on' : ''}" data-a="me-base" data-v="">Not set</button></div>
     <div class="fine">0 for weight stacks and dumbbells. Weight chips then pick the <b>added</b> weight and the app shows added + base = total.</div>
-    ${hasChips(machById(ex, mId)) ? '' : `<h3>Plate entry</h3><div data-testid="me-ps">${seg('me-ps', [['total', 'Total'], ['side', 'Per side (×2)']], meSide() ? 'side' : 'total')}</div>
-    <div class="fine">Per side: enter the plates on one side; total = 2 × per side + base (Iso-Lateral / plate-loaded machines).</div>
-    <h3>Arms</h3><div data-testid="me-arms">${seg('me-arms', [['sep', 'Work separately'], ['shared', 'Shared load']], ME.arms ? 'sep' : 'shared')}</div>
-    <div class="fine">Work separately: each arm has its own weight (Iso-Lateral levers) — shown per arm, e.g. 32.5 + 12 base = 44.5 lb / arm, base counted per arm. Shared load: both sides add up to one weight (leg press, hack squat) — shown as per side · total.</div>`}` : ''}
+    <h3>Machine type</h3><div class="mtypes" data-testid="me-type">${[['stack', 'Stack', 'One weight stack, pin, dumbbells or cable'], ['dstack', 'Double stack', 'Two stacks, one per arm — same weight each arm, shown per arm'],
+      ['pshared', 'Plate shared', 'Plates per side onto one shared load (leg press, hack squat) — per side · total'], ['psplit', 'Plate split', 'Each arm its own lever, plates and base — (plates + base) per arm']]
+      .map(([v, t, d]) => `<button class="mtype ${ME.mtype === v ? 'on' : ''}" data-a="me-type" data-v="${v}" data-testid="me-type-${v}"><b>${t}</b><span>${d}</span></button>`).join('')}</div>` : ''}
     <h3>Coaching cues for this machine (optional)</h3><textarea class="field" data-i="me-cues" placeholder="e.g. seat 4, handles mid-chest" data-testid="me-cues">${esc(ME.cues)}</textarea>
     <h3>Caution for this machine (optional)</h3><textarea class="field" data-i="me-caution" placeholder="e.g. don't force depth if the shoulder pinches" data-testid="me-caution">${esc(ME.caution || '')}</textarea>
     <h3>Photo (optional)</h3><div class="chips"><button class="chip sm" data-a="me-photo" data-cap="environment">📷 Take photo</button>
@@ -2303,7 +2330,8 @@ function viewExHistory(sid, exId) {
     const add = e.add != null ? cv(e.add, e) : null, base = e.base == null ? null : cv(e.base, e);
     const tot = e.base === null ? null : round1(dispW(e));
     const w = add == null ? `${fmtW(dispW(e))} ${u}` : base === null ? `${fmtW(add)} + base? ${u}` : base ? `${fmtW(add)} + ${fmtW(base)} = ${fmtW(tot)} ${u}` : `${fmtW(tot)} ${u}`;
-    const q = psParts(e); if (q && q.arms) return `${q.arm === null ? `${fmtW(q.side)} ${u} plates / arm + base?` : `${fmtW(q.arm)} ${u} / arm (${fmtW(q.side)} plates + ${fmtW(q.base)} base)`} × ${e.reps}`;
+    const q = psParts(e); if (q && q.dstack) return `${fmtW(q.arm)} ${u} / arm${q.nob ? ' + base?' : e.base ? ` (${fmtW(e.add)} stack + ${fmtW(e.base)} base)` : ''} × ${e.reps}`;
+    if (q && q.arms) return `${q.arm === null ? `${fmtW(q.side)} ${u} plates / arm + base?` : `${fmtW(q.arm)} ${u} / arm (${fmtW(q.side)} plates + ${fmtW(q.base)} base)`} × ${e.reps}`;
     const ps = psLong(e); return `${ps ? ps + ' ' + u : w} × ${e.reps}`; };
   const chips = e => [...(e.tags || []).map(t => `<span class="pill">${esc(t)}</span>`), e.note ? `<span class="pill hnote">📝 ${esc(e.note)}</span>` : ''].join('');
   // per-machine summary: best (heaviest total, then most reps; longest for cardio) and last
@@ -2735,7 +2763,7 @@ document.addEventListener('click', async ev => {
     case 'me-gym': ME.gym = ds.v; return render();
     case 'me-brand': ME.brand = ds.v; return render();
     case 'me-ps': ME.perSide = ds.v === 'side'; if (!ME.perSide) ME.arms = false; return render();
-    case 'me-arms': ME.arms = ds.v === 'sep'; ME.armsSet = true; if (ME.arms) ME.perSide = true; return render();
+    case 'me-type': ME.mtype = ds.v; ME.typeSet = true; return render();
     case 'me-gym-new': { const g = await askText('New gym tag', '', 'e.g. San Jose'); if (g) ME.gym = g; return render(); }
     case 'me-base': return meSetBase(ds.v === '' ? null : +ds.v);
     case 'me-bstep': return meSetBase(clamp(round1((ME.base || 0) + (+ds.d) * (unit() === 'kg' ? 2.5 : 5)), 0, 200));
@@ -2805,7 +2833,7 @@ function saveMachine() {
   const brand = (ME.brand || '').trim();
   const renamed = !ME.isNew && (m.name !== name || (m.brand || '') !== brand);
   if (ME.perSide != null && ex.kind !== 'cardio') m.perSide = !!ME.perSide;
-  if ((ME.armsSet || m.arms !== undefined) && ex.kind !== 'cardio') m.arms = !!ME.arms;
+  if ((ME.typeSet || m.mtype !== undefined) && ex.kind !== 'cardio' && MTYPES[ME.mtype]) m.mtype = ME.mtype;
   Object.assign(m, { brand, name, gym: (ME.gym || '').trim(), loc: (ME.loc || '').trim(), cues: (ME.cues || '').trim(), caution: (ME.caution || '').trim(), bu: m.bu || unit() });
   if (m.base === undefined) m.base = null;
   setMachineBase(ex, m, ex.kind === 'cardio' ? 0 : ME.base);

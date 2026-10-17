@@ -1,12 +1,12 @@
 {
  "app": "liftlog",
  "schema": 2,
- "version": "2.6.1",
- "catalogVersion": 1792248541764,
- "exportedAt": "2026-10-17T14:49:04.054594Z",
+ "version": "2.6.2",
+ "catalogVersion": 1792250572410,
+ "exportedAt": "2026-10-17T15:22:53.888449Z",
  "state": {
   "v": 2,
-  "created": 1792248541764,
+  "created": 1792250572410,
   "setupDone": true,
   "lastExport": null,
   "settings": {
@@ -32,7 +32,8 @@
       "gym": "Lakeway",
       "loc": "4-2",
       "cues": "Elbows flared, keep it controlled",
-      "caution": ""
+      "caution": "",
+      "mtype": "stack"
      },
      {
       "id": "m-nautilus-leverage-chest-press",
@@ -43,29 +44,32 @@
       "gym": "",
       "loc": "",
       "cues": "Elbows flared, sit upright with back against the pad, handles start beside the chest, press forward",
-      "caution": ""
+      "caution": "",
+      "mtype": "pshared"
      },
      {
       "id": "m-hammer-strength-select-chest-press",
-      "brand": "Hammer Strength",
-      "name": "Select Chest Press",
+      "brand": "Hammer Strength MTS",
+      "name": "Chest Press",
       "base": 0,
       "bu": "lb",
       "gym": "Lakeway",
       "loc": "8-12",
       "cues": "Elbows ~30-45° from torso (not fully flared), chest up, back supported by the pad",
-      "caution": "Don't force excessive depth if the shoulder starts to pinch"
+      "caution": "Don't force excessive depth if the shoulder starts to pinch",
+      "mtype": "dstack"
      },
      {
       "id": "m-nautilus-selectorized-chest-press-lakeway",
-      "brand": "Nautilus",
-      "name": "Selectorized Chest Press (Lakeway)",
+      "brand": "Nautilus Inspiration",
+      "name": "Chest Press",
       "base": 0,
       "bu": "lb",
       "gym": "Lakeway",
       "loc": "8-2",
       "cues": "Elbows flared",
-      "caution": ""
+      "caution": "",
+      "mtype": "stack"
      },
      {
       "id": "m-hammer-strength-iso-lateral-bench-press",
@@ -77,7 +81,7 @@
       "loc": "9-11",
       "cues": "Elbows ~30-45° from torso (not fully flared), chest up, back supported by the pad",
       "caution": "Don't force excessive depth if the shoulder starts to pinch",
-      "arms": true
+      "mtype": "psplit"
      }
     ],
     "pinned": "",
@@ -90,14 +94,15 @@
     "machines": [
      {
       "id": "m-hammer-strength-select-incline-press",
-      "brand": "Hammer Strength",
-      "name": "Select Incline Press",
+      "brand": "Hammer Strength MTS",
+      "name": "Incline Press",
       "base": 0,
       "bu": "lb",
       "gym": "Lakeway",
       "loc": "8-11",
       "cues": "Elbows tucked ~30-45° (not flared), handles start around armpit/upper chest, controlled range of motion",
-      "caution": "Don't force the bottom position if the right shoulder feels pinchy"
+      "caution": "Don't force the bottom position if the right shoulder feels pinchy",
+      "mtype": "dstack"
      },
      {
       "id": "m-incline-press-mauricio",
@@ -108,7 +113,8 @@
       "gym": "Lakeway",
       "loc": "",
       "cues": "Elbows tucked, don't flare the elbows, controlled range for the shoulder",
-      "caution": ""
+      "caution": "",
+      "mtype": "stack"
      },
      {
       "id": "m-hammer-strength-iso-lateral-incline-press",
@@ -120,7 +126,7 @@
       "loc": "9-10",
       "cues": "Elbows tucked ~30-45° (not flared), handles start around armpit/upper chest, controlled range of motion",
       "caution": "Don't force the bottom position if the right shoulder feels pinchy",
-      "arms": true
+      "mtype": "psplit"
      },
      {
       "id": "m-nautilus-leverage-incline-press",
@@ -131,7 +137,8 @@
       "gym": "Lakeway",
       "loc": "10-10",
       "cues": "",
-      "caution": ""
+      "caution": "",
+      "mtype": "pshared"
      }
     ],
     "pinned": "",
@@ -152,7 +159,7 @@
       "loc": "9-9",
       "cues": "Elbows ~30-45° from torso, controlled range of motion",
       "caution": "Don't force excessive depth if the shoulder starts to pinch",
-      "arms": true
+      "mtype": "psplit"
      }
     ],
     "pinned": "",
@@ -172,7 +179,8 @@
       "gym": "",
       "loc": "",
       "cues": "Face away from the pad, bring arms forward and together (opposite of rear-delt use)",
-      "caution": ""
+      "caution": "",
+      "mtype": "stack"
      },
      {
       "id": "m-nautilus-impact-deltoid-fly-pec-fly",
@@ -183,7 +191,8 @@
       "gym": "Lakeway",
       "loc": "5-4 / 5-5 / 5-6",
       "cues": "",
-      "caution": ""
+      "caution": "",
+      "mtype": "stack"
      }
     ],
     "pinned": "",
@@ -204,6 +213,7 @@
       "loc": "Row 7 (any of 9 towers)",
       "cues": "Single handle, pulley ~mid-shoulder height, palm down, elbow tucked beside body, upper arm fixed (only forearm moves), extend until nearly straight, don't swing the shoulder",
       "caution": "",
+      "mtype": "stack",
       "weightChips": [
        0,
        11,
@@ -239,7 +249,8 @@
       "gym": "",
       "loc": "",
       "cues": "",
-      "caution": ""
+      "caution": "",
+      "mtype": "stack"
      },
      {
       "id": "m-nautilus-impact-triceps-extension",
@@ -250,7 +261,8 @@
       "gym": "Lakeway",
       "loc": "5-9",
       "cues": "",
-      "caution": ""
+      "caution": "",
+      "mtype": "stack"
      }
     ],
     "pinned": "",
@@ -270,7 +282,8 @@
       "gym": "Lakeway",
       "loc": "4-7",
       "cues": "Narrow grip, elbows tucked, brace abs, full movement (don't shorten the bottom)",
-      "caution": ""
+      "caution": "",
+      "mtype": "stack"
      }
     ],
     "pinned": "",
@@ -291,18 +304,19 @@
       "loc": "9-7",
       "cues": "Elbows tucked/aligned (not flared), handles start at shoulder/upper-chest level (not near nipples), forearms ~vertical, controlled return, don't let elbows travel far behind the torso",
       "caution": "",
-      "arms": true
+      "mtype": "psplit"
      },
      {
       "id": "m-hammer-strength-select-shoulder-press",
-      "brand": "Hammer Strength",
-      "name": "Select Shoulder Press",
+      "brand": "Hammer Strength MTS",
+      "name": "Shoulder Press",
       "base": 0,
       "bu": "lb",
       "gym": "Lakeway",
       "loc": "8-9",
       "cues": "",
-      "caution": ""
+      "caution": "",
+      "mtype": "dstack"
      },
      {
       "id": "m-hoist-shoulder-press",
@@ -313,7 +327,8 @@
       "gym": "Lakeway",
       "loc": "4-3",
       "cues": "",
-      "caution": ""
+      "caution": "",
+      "mtype": "stack"
      }
     ],
     "pinned": "",
@@ -333,7 +348,8 @@
       "gym": "",
       "loc": "",
       "cues": "\"Scooch the booch\", \"flat-table it\" (flatten arms as you raise)",
-      "caution": ""
+      "caution": "",
+      "mtype": "stack"
      }
     ],
     "pinned": "",
@@ -353,7 +369,8 @@
       "gym": "",
       "loc": "",
       "cues": "Wide grip, elbows follow the machine's arc, drive elbows down, pull to upper chest, pull from armpits/elbows (not hands), pause/squeeze at bottom",
-      "caution": ""
+      "caution": "",
+      "mtype": "stack"
      },
      {
       "id": "m-wide-grip-lat-pulldown-mauricio-winchester",
@@ -364,7 +381,8 @@
       "gym": "",
       "loc": "",
       "cues": "Wide grip, drive elbows down, pull to upper chest",
-      "caution": ""
+      "caution": "",
+      "mtype": "stack"
      },
      {
       "id": "m-cable-tower",
@@ -376,6 +394,7 @@
       "loc": "Row 7 (any of 9 towers)",
       "cues": "",
       "caution": "",
+      "mtype": "stack",
       "weightChips": [
        0,
        11,
@@ -412,7 +431,7 @@
       "loc": "9-8",
       "cues": "Independent levers, drive elbows down",
       "caution": "",
-      "arms": true
+      "mtype": "psplit"
      }
     ],
     "pinned": "",
@@ -433,6 +452,7 @@
       "loc": "Row 7 (any of 9 towers)",
       "cues": "Elbows tucked",
       "caution": "",
+      "mtype": "stack",
       "weightChips": [
        0,
        11,
@@ -469,7 +489,7 @@
       "loc": "9-4",
       "cues": "Independent levers, elbows tucked",
       "caution": "",
-      "arms": true
+      "mtype": "psplit"
      }
     ],
     "pinned": "",
@@ -490,7 +510,7 @@
       "loc": "10-6",
       "cues": "Elbows flared and up; focus on squeezing the back · Elbows flared for upper back, one arm at a time, lean forward so chest is firmly on the pad, don't count the set if you sit back and lose chest support",
       "caution": "",
-      "arms": true
+      "mtype": "psplit"
      }
     ],
     "pinned": "",
@@ -510,7 +530,20 @@
       "gym": "Lakeway",
       "loc": "9-5",
       "cues": "Chest planted on the support, shoulders down, drive elbows fully back, controlled",
-      "caution": ""
+      "caution": "",
+      "mtype": "psplit"
+     },
+     {
+      "id": "m-hammer-strength-mts-high-row",
+      "brand": "Hammer Strength MTS",
+      "name": "High Row",
+      "base": 0,
+      "bu": "lb",
+      "gym": "Lakeway",
+      "loc": "8-10",
+      "cues": "",
+      "caution": "",
+      "mtype": "dstack"
      }
     ],
     "pinned": "",
@@ -530,7 +563,8 @@
       "gym": "Lakeway",
       "loc": "5-4 / 5-5 / 5-6",
       "cues": "",
-      "caution": ""
+      "caution": "",
+      "mtype": "stack"
      }
     ],
     "pinned": "",
@@ -550,7 +584,8 @@
       "gym": "",
       "loc": "",
       "cues": "Bench on 4th hole, back & shoulders supported, arms nearly straight at bottom, elbows behind/under shoulders, upper arm still, alternate arms, rotate dumbbell (parallel at bottom → perpendicular at top), wrist neutral (don't fold), don't rock torso or bring elbow forward",
-      "caution": ""
+      "caution": "",
+      "mtype": "stack"
      },
      {
       "id": "m-hoist-biceps-curl",
@@ -561,7 +596,8 @@
       "gym": "Lakeway",
       "loc": "4-6",
       "cues": "",
-      "caution": ""
+      "caution": "",
+      "mtype": "stack"
      }
     ],
     "pinned": "Avoid Nautilus Impact Biceps Curl, hurt shoulder",
@@ -581,7 +617,8 @@
       "gym": "Lakeway",
       "loc": "Dumbbell rack",
       "cues": "Weight is per dumbbell (log one dumbbell, not the pair)",
-      "caution": ""
+      "caution": "",
+      "mtype": "stack"
      }
     ],
     "pinned": "",
@@ -602,6 +639,7 @@
       "loc": "11-A",
       "cues": "Feet apart & centered, toes at the upper horizontal line, heels over the notched part of the platform, machine Level 3, back & hips supported, brace abs, don't turn toes far out, don't lock knees at top",
       "caution": "",
+      "mtype": "pshared",
       "photoId": "photo-d747b643"
      }
     ],
@@ -622,7 +660,8 @@
       "gym": "Lakeway",
       "loc": "10-A / 10-C",
       "cues": "",
-      "caution": ""
+      "caution": "",
+      "mtype": "pshared"
      }
     ],
     "pinned": "",
@@ -643,7 +682,7 @@
       "loc": "10-1",
       "cues": "Independent levers, one leg at a time",
       "caution": "",
-      "arms": true,
+      "mtype": "psplit",
       "photoId": "photo-98744134"
      },
      {
@@ -656,6 +695,7 @@
       "loc": "8-3",
       "cues": "Backup when the Hammer Strength is busy",
       "caution": "",
+      "mtype": "stack",
       "photoId": "photo-7b7a8820"
      }
     ],
@@ -677,6 +717,7 @@
       "loc": "8-4",
       "cues": "Feet neutral or slightly toes-up, don't rotate or point the feet, knees track straight ahead",
       "caution": "",
+      "mtype": "stack",
       "photoId": "photo-06251e38"
      }
     ],
@@ -697,7 +738,8 @@
       "gym": "Lakeway",
       "loc": "8-5 / 8-6",
       "cues": "Comfortable starting width (next-wider was too wide), squeeze inward, open again under control · brand of the 8-5 / 8-6 twins unconfirmed",
-      "caution": ""
+      "caution": "",
+      "mtype": "stack"
      },
      {
       "id": "m-adductor-other-gym",
@@ -708,7 +750,8 @@
       "gym": "",
       "loc": "",
       "cues": "Movement is inward",
-      "caution": ""
+      "caution": "",
+      "mtype": "stack"
      }
     ],
     "pinned": "",
@@ -728,7 +771,8 @@
       "gym": "Lakeway",
       "loc": "8-5 / 8-6",
       "cues": "Push outward, start smoothly and gradually, don't pop/launch the pads, controlled return · brand of the 8-5 / 8-6 twins unconfirmed",
-      "caution": ""
+      "caution": "",
+      "mtype": "stack"
      },
      {
       "id": "m-abductor-other-gym",
@@ -739,7 +783,8 @@
       "gym": "",
       "loc": "",
       "cues": "Movement is outward",
-      "caution": ""
+      "caution": "",
+      "mtype": "stack"
      }
     ],
     "pinned": "",
@@ -760,6 +805,7 @@
       "loc": "9-C",
       "cues": "",
       "caution": "Reported a significant pull under the inside of the right heel after using this machine",
+      "mtype": "stack",
       "photoId": "photo-cc76cf1c"
      },
      {
@@ -771,7 +817,8 @@
       "gym": "",
       "loc": "",
       "cues": "",
-      "caution": ""
+      "caution": "",
+      "mtype": "stack"
      }
     ],
     "pinned": "",
