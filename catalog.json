@@ -1,12 +1,12 @@
 {
  "app": "liftlog",
  "schema": 2,
- "version": "2.5.10",
- "catalogVersion": 1792232450448,
- "exportedAt": "2026-10-17T10:20:52.100515Z",
+ "version": "2.6.0",
+ "catalogVersion": 1792235080208,
+ "exportedAt": "2026-10-17T11:04:41.996457Z",
  "state": {
   "v": 2,
-  "created": 1792232450448,
+  "created": 1792235080208,
   "setupDone": true,
   "lastExport": null,
   "settings": {
@@ -25,7 +25,8 @@
     "machines": [
      {
       "id": "m-hoist-roc-it-chest-press",
-      "name": "HOIST ROC-IT Chest Press",
+      "brand": "HOIST",
+      "name": "ROC-IT Chest Press",
       "base": 0,
       "bu": "lb",
       "gym": "Lakeway",
@@ -35,7 +36,8 @@
      },
      {
       "id": "m-nautilus-leverage-chest-press",
-      "name": "Nautilus Leverage Chest Press",
+      "brand": "Nautilus Leverage",
+      "name": "Chest Press",
       "base": null,
       "bu": "lb",
       "gym": "",
@@ -45,7 +47,8 @@
      },
      {
       "id": "m-hammer-strength-select-chest-press",
-      "name": "Hammer Strength Select Chest Press",
+      "brand": "Hammer Strength",
+      "name": "Select Chest Press",
       "base": 0,
       "bu": "lb",
       "gym": "Lakeway",
@@ -55,7 +58,8 @@
      },
      {
       "id": "m-nautilus-selectorized-chest-press-lakeway",
-      "name": "Nautilus Selectorized Chest Press (Lakeway)",
+      "brand": "Nautilus",
+      "name": "Selectorized Chest Press (Lakeway)",
       "base": 0,
       "bu": "lb",
       "gym": "Lakeway",
@@ -65,7 +69,8 @@
      },
      {
       "id": "m-hammer-strength-iso-lateral-bench-press",
-      "name": "Hammer Strength Iso-Lateral Bench Press",
+      "brand": "Hammer Strength",
+      "name": "Iso-Lateral Bench Press",
       "base": null,
       "bu": "lb",
       "gym": "Lakeway",
@@ -84,7 +89,8 @@
     "machines": [
      {
       "id": "m-hammer-strength-select-incline-press",
-      "name": "Hammer Strength Select Incline Press",
+      "brand": "Hammer Strength",
+      "name": "Select Incline Press",
       "base": 0,
       "bu": "lb",
       "gym": "Lakeway",
@@ -94,6 +100,7 @@
      },
      {
       "id": "m-incline-press-mauricio",
+      "brand": "",
       "name": "Incline Press (Mauricio)",
       "base": null,
       "bu": "lb",
@@ -104,7 +111,8 @@
      },
      {
       "id": "m-hammer-strength-iso-lateral-incline-press",
-      "name": "Hammer Strength Iso-Lateral Incline Press",
+      "brand": "Hammer Strength",
+      "name": "Iso-Lateral Incline Press",
       "base": null,
       "bu": "lb",
       "gym": "Lakeway",
@@ -114,7 +122,8 @@
      },
      {
       "id": "m-nautilus-leverage-incline-press",
-      "name": "Nautilus Leverage Incline Press",
+      "brand": "Nautilus Leverage",
+      "name": "Incline Press",
       "base": null,
       "bu": "lb",
       "gym": "Lakeway",
@@ -133,7 +142,8 @@
     "machines": [
      {
       "id": "m-hammer-strength-iso-lateral-decline-press",
-      "name": "Hammer Strength Iso-Lateral Decline Press",
+      "brand": "Hammer Strength",
+      "name": "Iso-Lateral Decline Press",
       "base": null,
       "bu": "lb",
       "gym": "Lakeway",
@@ -152,6 +162,7 @@
     "machines": [
      {
       "id": "m-pec-deck-chest-fly",
+      "brand": "",
       "name": "Pec-Deck / Chest Fly",
       "base": null,
       "bu": "lb",
@@ -162,7 +173,8 @@
      },
      {
       "id": "m-nautilus-impact-deltoid-fly-pec-fly",
-      "name": "Nautilus Impact Deltoid Fly / Pec Fly",
+      "brand": "Nautilus Impact",
+      "name": "Deltoid Fly / Pec Fly",
       "base": 0,
       "bu": "lb",
       "gym": "Lakeway",
@@ -181,6 +193,7 @@
     "machines": [
      {
       "id": "m-cable-tower-single-arm-pulldown",
+      "brand": "",
       "name": "Cable Tower (single-arm pulldown)",
       "base": 0,
       "bu": "lb",
@@ -216,7 +229,8 @@
      },
      {
       "id": "m-matrix-triceps-press",
-      "name": "Matrix Triceps Press",
+      "brand": "Matrix",
+      "name": "Triceps Press",
       "base": null,
       "bu": "lb",
       "gym": "",
@@ -226,7 +240,8 @@
      },
      {
       "id": "m-nautilus-impact-triceps-extension",
-      "name": "Nautilus Impact Triceps Extension",
+      "brand": "Nautilus Impact",
+      "name": "Triceps Extension",
       "base": 0,
       "bu": "lb",
       "gym": "Lakeway",
@@ -245,7 +260,8 @@
     "machines": [
      {
       "id": "m-hoist-seated-dip",
-      "name": "HOIST Seated Dip",
+      "brand": "HOIST",
+      "name": "Seated Dip",
       "base": null,
       "bu": "lb",
       "gym": "Lakeway",
@@ -264,6 +280,7 @@
     "machines": [
      {
       "id": "m-plate-loaded-iso-lateral-shoulder-press",
+      "brand": "",
       "name": "Plate-Loaded Iso-Lateral Shoulder Press",
       "base": null,
       "bu": "lb",
@@ -274,7 +291,8 @@
      },
      {
       "id": "m-hammer-strength-select-shoulder-press",
-      "name": "Hammer Strength Select Shoulder Press",
+      "brand": "Hammer Strength",
+      "name": "Select Shoulder Press",
       "base": 0,
       "bu": "lb",
       "gym": "Lakeway",
@@ -284,7 +302,8 @@
      },
      {
       "id": "m-hoist-shoulder-press",
-      "name": "HOIST Shoulder Press",
+      "brand": "HOIST",
+      "name": "Shoulder Press",
       "base": 0,
       "bu": "lb",
       "gym": "Lakeway",
@@ -303,7 +322,8 @@
     "machines": [
      {
       "id": "m-nautilus-impact-deltoid-raise",
-      "name": "Nautilus Impact Deltoid Raise",
+      "brand": "Nautilus Impact",
+      "name": "Deltoid Raise",
       "base": null,
       "bu": "lb",
       "gym": "",
@@ -322,7 +342,8 @@
     "machines": [
      {
       "id": "m-hoist-lat-pulldown",
-      "name": "HOIST Lat Pulldown",
+      "brand": "HOIST",
+      "name": "Lat Pulldown",
       "base": null,
       "bu": "lb",
       "gym": "",
@@ -332,6 +353,7 @@
      },
      {
       "id": "m-wide-grip-lat-pulldown-mauricio-winchester",
+      "brand": "",
       "name": "Wide-Grip Lat Pulldown (Mauricio/Winchester)",
       "base": null,
       "bu": "lb",
@@ -342,6 +364,7 @@
      },
      {
       "id": "m-cable-tower",
+      "brand": "",
       "name": "Cable Tower",
       "base": 0,
       "bu": "lb",
@@ -377,7 +400,8 @@
      },
      {
       "id": "m-hammer-strength-iso-lateral-front-lat-pulldown",
-      "name": "Hammer Strength Iso-Lateral Front Lat Pulldown",
+      "brand": "Hammer Strength",
+      "name": "Iso-Lateral Front Lat Pulldown",
       "base": null,
       "bu": "lb",
       "gym": "Lakeway",
@@ -396,6 +420,7 @@
     "machines": [
      {
       "id": "m-cable-low-row-cable-tower",
+      "brand": "",
       "name": "Cable Tower",
       "base": 0,
       "bu": "lb",
@@ -431,7 +456,8 @@
      },
      {
       "id": "m-hammer-strength-iso-lateral-low-row",
-      "name": "Hammer Strength Iso-Lateral Low Row",
+      "brand": "Hammer Strength",
+      "name": "Iso-Lateral Low Row",
       "base": null,
       "bu": "lb",
       "gym": "Lakeway",
@@ -450,12 +476,13 @@
     "machines": [
      {
       "id": "m-iso-lateral-upper-back-row",
+      "brand": "",
       "name": "Iso-Lateral Upper-Back Row",
       "base": 12,
       "bu": "lb",
       "gym": "Lakeway",
       "loc": "10-6",
-      "cues": "Elbows flared and up; focus on squeezing the back · Elbows flared for upper back, one arm at a time, lean forward so chest is firmly on the pad, don't count the set if you sit back and lose chest support · Confirm this is the Upper-Back Row machine",
+      "cues": "Elbows flared and up; focus on squeezing the back · Elbows flared for upper back, one arm at a time, lean forward so chest is firmly on the pad, don't count the set if you sit back and lose chest support",
       "caution": ""
      }
     ],
@@ -469,6 +496,7 @@
     "machines": [
      {
       "id": "m-iso-lateral-high-row",
+      "brand": "",
       "name": "Iso-Lateral High Row",
       "base": null,
       "bu": "lb",
@@ -488,7 +516,8 @@
     "machines": [
      {
       "id": "m-rear-delt-fly-nautilus-impact-deltoid-fly-pec-fly",
-      "name": "Nautilus Impact Deltoid Fly / Pec Fly",
+      "brand": "Nautilus Impact",
+      "name": "Deltoid Fly / Pec Fly",
       "base": 0,
       "bu": "lb",
       "gym": "Lakeway",
@@ -507,6 +536,7 @@
     "machines": [
      {
       "id": "m-incline-bench-dumbbells",
+      "brand": "",
       "name": "Incline Bench + Dumbbells",
       "base": null,
       "bu": "lb",
@@ -517,7 +547,8 @@
      },
      {
       "id": "m-hoist-biceps-curl",
-      "name": "HOIST Biceps Curl",
+      "brand": "HOIST",
+      "name": "Biceps Curl",
       "base": 0,
       "bu": "lb",
       "gym": "Lakeway",
@@ -536,6 +567,7 @@
     "machines": [
      {
       "id": "m-hammer-curl-dumbbells",
+      "brand": "",
       "name": "Dumbbells",
       "base": 0,
       "bu": "lb",
@@ -555,7 +587,8 @@
     "machines": [
      {
       "id": "m-nautilus-hack-squat-lakeway",
-      "name": "Nautilus Hack Squat (Lakeway)",
+      "brand": "Nautilus",
+      "name": "Hack Squat (Lakeway)",
       "base": 80,
       "bu": "lb",
       "gym": "Lakeway",
@@ -575,7 +608,8 @@
     "machines": [
      {
       "id": "m-nautilus-angled-leg-press",
-      "name": "Nautilus Angled Leg Press",
+      "brand": "Nautilus",
+      "name": "Angled Leg Press",
       "base": 90,
       "bu": "lb",
       "gym": "Lakeway",
@@ -594,7 +628,8 @@
     "machines": [
      {
       "id": "m-hammer-strength-iso-lateral-leg-extension",
-      "name": "Hammer Strength Iso-Lateral Leg Extension",
+      "brand": "Hammer Strength",
+      "name": "Iso-Lateral Leg Extension",
       "base": 4,
       "bu": "lb",
       "gym": "Lakeway",
@@ -605,7 +640,8 @@
      },
      {
       "id": "m-nautilus-inspiration-leg-extension",
-      "name": "Nautilus Inspiration Leg Extension",
+      "brand": "Nautilus Inspiration",
+      "name": "Leg Extension",
       "base": 0,
       "bu": "lb",
       "gym": "Lakeway",
@@ -625,7 +661,8 @@
     "machines": [
      {
       "id": "m-nautilus-inspiration-seated-leg-curl",
-      "name": "Nautilus Inspiration Seated Leg Curl",
+      "brand": "Nautilus Inspiration",
+      "name": "Seated Leg Curl",
       "base": 0,
       "bu": "lb",
       "gym": "Lakeway",
@@ -645,6 +682,7 @@
     "machines": [
      {
       "id": "m-hoist-adductor-inner-thigh",
+      "brand": "",
       "name": "HOIST Adductor (Inner Thigh)",
       "base": 0,
       "bu": "lb",
@@ -655,6 +693,7 @@
      },
      {
       "id": "m-adductor-other-gym",
+      "brand": "",
       "name": "Adductor (other gym)",
       "base": null,
       "bu": "lb",
@@ -674,6 +713,7 @@
     "machines": [
      {
       "id": "m-hoist-abductor-outer-thigh",
+      "brand": "",
       "name": "HOIST Abductor (Outer Thigh)",
       "base": 0,
       "bu": "lb",
@@ -684,6 +724,7 @@
      },
      {
       "id": "m-abductor-other-gym",
+      "brand": "",
       "name": "Abductor (other gym)",
       "base": null,
       "bu": "lb",
@@ -703,7 +744,8 @@
     "machines": [
      {
       "id": "m-nautilus-standing-calf-raise",
-      "name": "Nautilus Standing Calf Raise",
+      "brand": "Nautilus",
+      "name": "Standing Calf Raise",
       "base": 45,
       "bu": "lb",
       "gym": "Lakeway",
@@ -714,7 +756,8 @@
      },
      {
       "id": "m-nautilus-tilt-seat-calf",
-      "name": "Nautilus Tilt Seat Calf",
+      "brand": "Nautilus",
+      "name": "Tilt Seat Calf",
       "base": null,
       "bu": "lb",
       "gym": "",
@@ -840,6 +883,9 @@
    "name": [
     "HOIST ROC-IT Chest Press"
    ],
+   "brand": [
+    ""
+   ],
    "gym": [
     "Austin",
     "Lakeway"
@@ -861,6 +907,9 @@
    "name": [
     "Nautilus Leverage Chest Press"
    ],
+   "brand": [
+    ""
+   ],
    "gym": [
     ""
    ],
@@ -880,6 +929,9 @@
   "m-hammer-strength-select-chest-press": {
    "name": [
     "Hammer Strength Select Chest Press"
+   ],
+   "brand": [
+    ""
    ],
    "gym": [
     "Austin",
@@ -902,6 +954,9 @@
    "name": [
     "Nautilus Selectorized Chest Press (Lakeway)"
    ],
+   "brand": [
+    ""
+   ],
    "gym": [
     "Austin",
     "Lakeway"
@@ -922,6 +977,9 @@
   "m-selectorized-chest-press-san-jose": {
    "name": [
     "Selectorized Chest Press (San Jose)"
+   ],
+   "brand": [
+    ""
    ],
    "gym": [
     "San Jose"
@@ -954,6 +1012,9 @@
    "name": [
     "Hammer Strength Select Incline Press"
    ],
+   "brand": [
+    ""
+   ],
    "gym": [
     "Austin",
     "Lakeway"
@@ -975,6 +1036,9 @@
    "name": [
     "Incline Press (Mauricio)"
    ],
+   "brand": [
+    ""
+   ],
    "gym": [
     "Austin",
     "Lakeway"
@@ -995,6 +1059,9 @@
   "m-incline-press-san-jose": {
    "name": [
     "Incline Press (San Jose)"
+   ],
+   "brand": [
+    ""
    ],
    "gym": [
     "San Jose"
@@ -1027,6 +1094,9 @@
    "name": [
     "Pec-Deck / Chest Fly"
    ],
+   "brand": [
+    ""
+   ],
    "gym": [
     ""
    ],
@@ -1046,6 +1116,9 @@
   "m-nautilus-impact-deltoid-fly-pec-fly": {
    "name": [
     "Nautilus Impact Deltoid Fly / Pec Fly"
+   ],
+   "brand": [
+    ""
    ],
    "gym": [
     "Austin",
@@ -1079,6 +1152,9 @@
    "name": [
     "Cable Tower (single-arm pulldown)"
    ],
+   "brand": [
+    ""
+   ],
    "gym": [
     "Austin",
     "Lakeway"
@@ -1100,6 +1176,9 @@
    "name": [
     "Star Trac Triceps Extension"
    ],
+   "brand": [
+    ""
+   ],
    "gym": [
     "San Jose"
    ],
@@ -1120,6 +1199,9 @@
    "name": [
     "Matrix Triceps Press"
    ],
+   "brand": [
+    ""
+   ],
    "gym": [
     ""
    ],
@@ -1139,6 +1221,9 @@
   "m-nautilus-impact-triceps-extension": {
    "name": [
     "Nautilus Impact Triceps Extension"
+   ],
+   "brand": [
+    ""
    ],
    "gym": [
     "Austin",
@@ -1172,6 +1257,9 @@
    "name": [
     "HOIST Seated Dip"
    ],
+   "brand": [
+    ""
+   ],
    "gym": [
     "Austin",
     "Lakeway"
@@ -1204,6 +1292,9 @@
    "name": [
     "Plate-Loaded Iso-Lateral Shoulder Press"
    ],
+   "brand": [
+    ""
+   ],
    "gym": [
     "Austin",
     "Lakeway"
@@ -1226,6 +1317,9 @@
    "name": [
     "Nautilus Shoulder Press (San Jose)"
    ],
+   "brand": [
+    ""
+   ],
    "gym": [
     "San Jose"
    ],
@@ -1245,6 +1339,9 @@
   "m-hammer-strength-select-shoulder-press": {
    "name": [
     "Hammer Strength Select Shoulder Press"
+   ],
+   "brand": [
+    ""
    ],
    "gym": [
     "Austin",
@@ -1266,6 +1363,9 @@
   "m-hoist-shoulder-press": {
    "name": [
     "HOIST Shoulder Press"
+   ],
+   "brand": [
+    ""
    ],
    "gym": [
     "Austin",
@@ -1299,6 +1399,9 @@
    "name": [
     "Nautilus Impact Deltoid Raise"
    ],
+   "brand": [
+    ""
+   ],
    "gym": [
     ""
    ],
@@ -1330,6 +1433,9 @@
    "name": [
     "HOIST Lat Pulldown"
    ],
+   "brand": [
+    ""
+   ],
    "gym": [
     ""
    ],
@@ -1350,6 +1456,9 @@
    "name": [
     "Wide-Grip Lat Pulldown (Mauricio/Winchester)"
    ],
+   "brand": [
+    ""
+   ],
    "gym": [
     ""
    ],
@@ -1369,6 +1478,9 @@
   "m-cable-tower": {
    "name": [
     "Cable Tower"
+   ],
+   "brand": [
+    ""
    ],
    "gym": [
     "Austin",
@@ -1402,6 +1514,9 @@
    "name": [
     "Cable Tower"
    ],
+   "brand": [
+    ""
+   ],
    "gym": [
     "Austin",
     "Lakeway"
@@ -1433,6 +1548,9 @@
   "m-iso-lateral-upper-back-row": {
    "name": [
     "Iso-Lateral Upper-Back Row"
+   ],
+   "brand": [
+    ""
    ],
    "gym": [
     "",
@@ -1472,6 +1590,9 @@
    "name": [
     "Iso-Lateral High Row"
    ],
+   "brand": [
+    ""
+   ],
    "gym": [
     "",
     "Austin",
@@ -1506,6 +1627,9 @@
    "name": [
     "Star Trac Rear-Delt Fly (Reverse Pec-Deck)"
    ],
+   "brand": [
+    ""
+   ],
    "gym": [
     "San Jose"
    ],
@@ -1525,6 +1649,9 @@
   "m-rear-delt-fly-nautilus-impact-deltoid-fly-pec-fly": {
    "name": [
     "Nautilus Impact Deltoid Fly / Pec Fly"
+   ],
+   "brand": [
+    ""
    ],
    "gym": [
     "Austin",
@@ -1558,6 +1685,9 @@
    "name": [
     "Incline Bench + Dumbbells"
    ],
+   "brand": [
+    ""
+   ],
    "gym": [
     ""
    ],
@@ -1578,6 +1708,9 @@
    "name": [
     "Star Trac Biceps Curl"
    ],
+   "brand": [
+    ""
+   ],
    "gym": [
     "San Jose"
    ],
@@ -1597,6 +1730,9 @@
   "m-hoist-biceps-curl": {
    "name": [
     "HOIST Biceps Curl"
+   ],
+   "brand": [
+    ""
    ],
    "gym": [
     "Austin",
@@ -1630,6 +1766,9 @@
    "name": [
     "Nautilus Hack Squat (Lakeway)"
    ],
+   "brand": [
+    ""
+   ],
    "gym": [
     "Austin",
     "Lakeway"
@@ -1650,6 +1789,9 @@
   "m-plate-loaded-hack-squat-san-jose": {
    "name": [
     "Plate-Loaded Hack Squat (San Jose)"
+   ],
+   "brand": [
+    ""
    ],
    "gym": [
     "San Jose"
@@ -1683,6 +1825,9 @@
     "Nautilus Angled Leg Press",
     "Nautilus Leverage Angled Leg Press"
    ],
+   "brand": [
+    ""
+   ],
    "gym": [
     "Austin",
     "Lakeway"
@@ -1704,6 +1849,9 @@
   "m-star-trac-angled-leg-press": {
    "name": [
     "Star Trac Angled Leg Press"
+   ],
+   "brand": [
+    ""
    ],
    "gym": [
     "San Jose"
@@ -1736,6 +1884,9 @@
    "name": [
     "Hammer Strength Iso-Lateral Leg Extension"
    ],
+   "brand": [
+    ""
+   ],
    "gym": [
     "Austin",
     "Lakeway"
@@ -1757,6 +1908,9 @@
    "name": [
     "Matrix Leg Extension (San Jose)"
    ],
+   "brand": [
+    ""
+   ],
    "gym": [
     "San Jose"
    ],
@@ -1776,6 +1930,9 @@
   "m-nautilus-inspiration-leg-extension": {
    "name": [
     "Nautilus Inspiration Leg Extension"
+   ],
+   "brand": [
+    ""
    ],
    "gym": [
     "Austin",
@@ -1809,6 +1966,9 @@
    "name": [
     "Nautilus Inspiration Seated Leg Curl"
    ],
+   "brand": [
+    ""
+   ],
    "gym": [
     "Austin",
     "Lakeway"
@@ -1841,6 +2001,9 @@
    "name": [
     "HOIST Adductor (Inner Thigh)"
    ],
+   "brand": [
+    ""
+   ],
    "gym": [
     "Austin",
     "Lakeway"
@@ -1861,6 +2024,9 @@
   "m-adductor-other-gym": {
    "name": [
     "Adductor (other gym)"
+   ],
+   "brand": [
+    ""
    ],
    "gym": [
     ""
@@ -1893,6 +2059,9 @@
    "name": [
     "HOIST Abductor (Outer Thigh)"
    ],
+   "brand": [
+    ""
+   ],
    "gym": [
     "Austin",
     "Lakeway"
@@ -1913,6 +2082,9 @@
   "m-abductor-other-gym": {
    "name": [
     "Abductor (other gym)"
+   ],
+   "brand": [
+    ""
    ],
    "gym": [
     ""
@@ -1945,6 +2117,9 @@
    "name": [
     "Star Trac Standing Calf Raise"
    ],
+   "brand": [
+    ""
+   ],
    "gym": [
     "San Jose"
    ],
@@ -1964,6 +2139,9 @@
   "m-nautilus-standing-calf-raise": {
    "name": [
     "Nautilus Standing Calf Raise"
+   ],
+   "brand": [
+    ""
    ],
    "gym": [
     "Austin",
@@ -1986,6 +2164,9 @@
    "name": [
     "Nautilus Tilt Seat Calf"
    ],
+   "brand": [
+    ""
+   ],
    "gym": [
     ""
    ],
@@ -2005,6 +2186,9 @@
   "m-hammer-strength-iso-lateral-bench-press": {
    "name": [
     "Hammer Strength Iso-Lateral Bench Press"
+   ],
+   "brand": [
+    ""
    ],
    "gym": [
     "Austin",
@@ -2026,6 +2210,9 @@
   "m-hammer-strength-iso-lateral-incline-press": {
    "name": [
     "Hammer Strength Iso-Lateral Incline Press"
+   ],
+   "brand": [
+    ""
    ],
    "gym": [
     "Austin",
@@ -2059,6 +2246,9 @@
    "name": [
     "Hammer Strength Iso-Lateral Decline Press"
    ],
+   "brand": [
+    ""
+   ],
    "gym": [
     "Austin",
     "Lakeway"
@@ -2080,6 +2270,9 @@
    "name": [
     "Hammer Strength Iso-Lateral Front Lat Pulldown"
    ],
+   "brand": [
+    ""
+   ],
    "gym": [
     "Austin",
     "Lakeway"
@@ -2100,6 +2293,9 @@
   "m-hammer-strength-iso-lateral-low-row": {
    "name": [
     "Hammer Strength Iso-Lateral Low Row"
+   ],
+   "brand": [
+    ""
    ],
    "gym": [
     "Austin",
@@ -2133,6 +2329,9 @@
    "name": [
     "Dumbbells"
    ],
+   "brand": [
+    ""
+   ],
    "gym": [
     "Lakeway"
    ],
@@ -2152,6 +2351,9 @@
   "m-nautilus-leverage-incline-press": {
    "name": [
     "Nautilus Leverage Incline Press"
+   ],
+   "brand": [
+    ""
    ],
    "gym": [
     "Lakeway"

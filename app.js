@@ -1,7 +1,7 @@
 /* Lift Log — tap-only workout logger PWA. Plain JS, no build step, no dependencies. */
 'use strict';
 (function () {
-const APP_VERSION = '2.5.10';
+const APP_VERSION = '2.6.0';
 const LB_PER_KG = 2.20462;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -197,7 +197,7 @@ function jDescribe(changes) {
   const of = p => changes.filter(c => c.k.startsWith(p));
   const E = of('entry:'), Ss = of('session:'), Mm = of('machine:');
   const exN = r => (S && S.exercises[r.exId] && S.exercises[r.exId].name) || r.exId || 'Exercise';
-  const mN = r => { const ex = S && S.exercises[r.exId]; const m = ex && ex.machines.find(x => x.id === r.mId); return m ? m.name : 'machine'; };
+  const mN = r => { const ex = S && S.exercises[r.exId]; const m = ex && ex.machines.find(x => x.id === r.mId); return m ? mLabel(m) : 'machine'; };
   const tN = id => ((S && S.templates.find(t => t.id === id)) || {}).name || 'Workout';
   const day = d => d ? fmtD(d) : '?';
   const one = (list, f1, fn) => list.length === 1 ? f1(list[0]) : fn(list);
@@ -206,7 +206,7 @@ function jDescribe(changes) {
   const movedD = E.filter(c => c.type === 'mod' && (c.before.sid !== c.after.sid || c.before.date !== c.after.date));
   if (movedD.length) { const b = movedD[0].before, a = movedD[0].after;
     return { action: 'move-date', label: one(movedD, c => `Moved ${exN(c.before)} S${c.before.set} from ${day(c.before.date)} → ${day(c.after.date)}`, l => `Moved ${l.length} ${exs(l.map(c => c.before))} sets from ${day(b.date)} → ${day(a.date)}`) }; }
-  const movedM = E.filter(c => c.type === 'mod' && c.before.mId !== c.after.mId);
+  const movedM = E.filter(c => c.type === 'mod' && (c.before.mId !== c.after.mId || c.before.exId !== c.after.exId));
   if (movedM.length) return { action: 'move-machine', label: one(movedM, c => `Moved ${exN(c.before)} S${c.before.set} from ${mN(c.before)} → ${mN(c.after)} (${day(c.after.date)})`, l => `Moved ${l.length} ${exs(l.map(c => c.before))} sets to ${mN(l[0].after)} (${day(l[0].after.date)})`) };
   const sDel = Ss.filter(c => c.type === 'del'), eDel = E.filter(c => c.type === 'del'), eAdd = E.filter(c => c.type === 'add'), sAdd = Ss.filter(c => c.type === 'add');
   if (sDel.length) return { action: 'session-delete', label: one(sDel, c => `Deleted ${tN(c.before.tid)} session · ${day(c.before.date)}${eDel.length ? ` (${eDel.length} entr${eDel.length === 1 ? 'y' : 'ies'})` : ''}`, l => `Deleted ${l.length} sessions (${eDel.length} entries)`) };
@@ -225,8 +225,8 @@ function jDescribe(changes) {
   if (sMod.length) { const th = sMod.filter(c => JSON.stringify(c.before.thoughts || {}) !== JSON.stringify(c.after.thoughts || {}));
     return th.length ? { action: 'notes', label: `Notes · ${tN(th[0].after.tid)} ${day(th[0].after.date)}` } : { action: 'session-edit', label: `Edited ${tN(sMod[0].after.tid)} session · ${day(sMod[0].after.date)}` }; }
   const baseC = Mm.filter(c => c.type === 'mod' && (c.before.base !== c.after.base || c.before.bu !== c.after.bu));
-  if (baseC.length === 1 && Mm.length === 1) { const b = baseC[0].before, a = baseC[0].after; return { action: 'base-change', label: `Base ${a.name}: ${b.base === null ? 'not set' : fmtW(b.base) + ' ' + (b.bu || 'lb')} → ${a.base === null ? 'not set' : fmtW(a.base) + ' ' + (a.bu || 'lb')}` }; }
-  if (Mm.length) return { action: 'machine-edit', label: one(Mm, c => `${c.type === 'add' ? 'Added' : c.type === 'del' ? 'Removed' : 'Edited'} machine ${(c.after || c.before).name}`, l => `Updated ${l.length} machines`) };
+  if (baseC.length === 1 && Mm.length === 1) { const b = baseC[0].before, a = baseC[0].after; return { action: 'base-change', label: `Base ${mLabel(a)}: ${b.base === null ? 'not set' : fmtW(b.base) + ' ' + (b.bu || 'lb')} → ${a.base === null ? 'not set' : fmtW(a.base) + ' ' + (a.bu || 'lb')}` }; }
+  if (Mm.length) return { action: 'machine-edit', label: one(Mm, c => `${c.type === 'add' ? 'Added' : c.type === 'del' ? 'Removed' : 'Edited'} machine ${mLabel(c.after || c.before)}`, l => `Updated ${l.length} machines`) };
   const Ex = of('exercise:'), T = of('template:'), A = of('advice:');
   if (Ex.length) return { action: 'exercise-edit', label: one(Ex, c => `${c.type === 'add' ? 'Added' : c.type === 'del' ? 'Removed' : 'Edited'} exercise ${(c.after || c.before).name}`, l => `Updated ${l.length} exercises`) };
   if (T.length) return { action: 'template-edit', label: one(T, c => `Edited template ${(c.after || c.before).name}`, l => `Updated ${l.length} templates`) };
@@ -298,7 +298,7 @@ function migrate(s) {
   for (let i = 0; i < 7; i++) if (!s.schedule[i]) s.schedule[i] = { t: null, m: 'solo' };
   Object.values(s.exercises).forEach(e => {
     e.machines = e.machines || []; e.pinned = e.pinned || ''; e.cues = e.cues || '';
-    e.machines.forEach(m => { m.base = (m.base === null || m.base === '') && e.kind !== 'cardio' ? null : +m.base || 0; m.caution = m.caution || ''; m.bu = m.bu || 'lb'; m.gym = m.gym || ''; m.loc = m.loc || ''; m.cues = m.cues || ''; });
+    e.machines.forEach(m => { m.base = (m.base === null || m.base === '') && e.kind !== 'cardio' ? null : +m.base || 0; m.caution = m.caution || ''; m.brand = m.brand || ''; m.bu = m.bu || 'lb'; m.gym = m.gym || ''; m.loc = m.loc || ''; m.cues = m.cues || ''; });
   });
   s.sessions.forEach(x => {
     x.entries = x.entries || []; x.exIds = x.exIds || []; x.thoughts = x.thoughts || {};
@@ -340,7 +340,10 @@ const exById = id => S.exercises[id];
 const sesById = id => S.sessions.find(s => s.id === id);
 const machById = (ex, mid) => ex && ex.machines.find(m => m.id === mid);
 const exName = id => (exById(id) || { name: '(deleted exercise)' }).name;
-const machName = (exId, mid) => { const m = machById(exById(exId), mid); return m ? m.name : '(deleted)'; };
+// 2.6.0: a machine has a brand and a name, edited separately; the id never changes. Shown as "Brand · Name" (just the name if no brand).
+const mLabel = m => m ? (m.brand ? `${m.brand} · ${m.name}` : m.name) : '';
+const mFull = m => m ? [m.brand, m.name].filter(Boolean).join(' ') : ''; // "Brand Name": how names looked before 2.6.0 (matching only)
+const machName = (exId, mid) => { const m = machById(exById(exId), mid); return m ? mLabel(m) : '(deleted)'; };
 const shortTpl = t => t ? t.name.replace(/ Day$/, '') : 'Rest';
 const unit = () => S.settings.unit;
 const step = () => unit() === 'kg' ? S.settings.stepKg : S.settings.stepLb;
@@ -373,13 +376,30 @@ const fmtTotal = v => v === 0 ? 'BW' : `${round1(v)} ${unit()}`;
 const snap = v => { const st = step(); return Math.max(0, round1(Math.round(v / st) * st)); };
 function machineForDraft(p) {
   const d = P[p]; if (!d || !d.mId) return null;
-  if (p === 'me' && typeof ME !== 'undefined' && ME) return { id: ME.key, weightChips: ME.weightChips, chipBu: ME.chipBu || 'lb', name: ME.name };
+  if (p === 'me' && typeof ME !== 'undefined' && ME) return { id: ME.key, weightChips: ME.weightChips, chipBu: ME.chipBu || 'lb', name: ME.name, brand: ME.brand, perSide: meSide() };
+  if (p === 'ed' && d.sid) { const s = sesById(d.sid); const e = s && s.entries.find(x => x.id === d.id); if (e) return machById(exById(e.exId), d.mId); }
   if (curEx) return machById(exById(curEx.exId), d.mId);
   // entry editor: draft key ed — machine from open sheet context not always available
   return null;
 }
+/* 2.6.0 weight entry modes:
+   - per side (Iso-Lateral / plate-loaded / Leverage machines, or set in Edit machine): the big number and chips are ONE side's plates;
+     working = 2 × per side, total = 2 × per side + base; both are shown.
+   - cable stacks (machines with stack chips): optional '+5 horseshoe' add-on, so 22 + 5 = 27 or 33 + 5 = 38 log with the stack chips. */
+const HS_LB = 5;
+const hasChips = m => !!m && Array.isArray(m.weightChips) && m.weightChips.length > 0;
+const perSideAuto = m => /iso-lateral|plate[- ]?loaded|leverage/i.test(mFull(m));
+const perSideOf = m => !!m && !hasChips(m) && (m.perSide != null ? !!m.perSide : perSideAuto(m));
+const hsVal = () => round1(conv(HS_LB, 'lb', unit()));
+const wMode = p => { const m = machineForDraft(p); const d = P[p] || {}; return { ps: perSideOf(m), hs: hasChips(m) && d.hs ? hsVal() : 0, cable: hasChips(m) }; };
+const chipOn = (p, xv) => { const w = wMode(p), v = P[p].add; return Math.abs((w.ps ? 2 * xv : xv + w.hs) - v) < 1e-6; };
+const chipToAdd = (p, xv) => { const w = wMode(p); return round1(w.ps ? 2 * xv : xv + w.hs); };
+// a logged cable weight that is a stack chip + 5 → the horseshoe was on
+const hsGuess = (m, add) => { if (!hasChips(m)) return false; const ch = m.weightChips.map(c => round1(conv(+c, m.chipBu || 'lb', unit())));
+  return !ch.some(c => Math.abs(c - add) < 0.06) && ch.some(c => Math.abs(c + hsVal() - add) < 0.06); };
 function weightChipList(p) {
   const m = machineForDraft(p);
+  if (perSideOf(m)) { const ss = unit() === 'kg' ? 1.25 : 2.5, max = unit() === 'kg' ? 150 : 325, out = []; for (let i = 0; i * ss <= max + 1e-9; i++) out.push(round1(i * ss)); return out; }
   if (m && Array.isArray(m.weightChips) && m.weightChips.length) {
     const from = m.chipBu || 'lb';
     return m.weightChips.map(c => round1(conv(+c, from, unit())));
@@ -457,8 +477,8 @@ function todaySetsHTML(ses, ex) {
   // One compact row of tappable chips (wraps for many sets) so the exercise screen fits without scrolling.
   return `<div class="today-sets ts-compact" data-testid="today-sets">
     <div class="row"><span class="sub mach-label grow">${esc(dayWord(ses.date))} · ${sets.length} set${sets.length === 1 ? '' : 's'}</span>
-      <span class="fine">tap to edit</span></div>
-    ${groups.map(g => `${multi ? `<div class="ts-gm">${esc(machName(ex.id, g.mId))}</div>` : ''}<div class="ts-chips">${g.sets.map(e => `<button class="tschip today-set" data-a="edit-entry" data-sid="${ses.id}" data-id="${e.id}" data-testid="today-set" aria-label="Set ${e.set}, ${fmtW(dispW(e))} by ${e.reps}, ${esc(machName(ex.id, e.mId))}">
+      <span class="fine">tap to edit</span><button class="linkbtn fine mvall" data-a="move-all" data-sid="${ses.id}" data-ex="${ex.id}" data-testid="move-all">⇄ Move all</button></div>
+    ${groups.map(g => `<div class="ts-chips">${multi ? `<span class="ts-gm">${esc(machName(ex.id, g.mId))}</span>` : ''}${g.sets.map(e => `<button class="tschip today-set" data-a="edit-entry" data-sid="${ses.id}" data-id="${e.id}" data-testid="today-set" aria-label="Set ${e.set}, ${fmtW(dispW(e))} by ${e.reps}, ${esc(machName(ex.id, e.mId))}">
       <b>S${e.set}</b>${fmtW(dispW(e))}×${e.reps}</button>`).join('')}</div>`).join('')}
   </div>`;
 }
@@ -516,13 +536,14 @@ function baseLineHTML(p) {
     <button class="chip sm baselock" data-a="unlock-base" data-m="${d.mId}" data-testid="unlock-base" aria-label="Unlock base to edit">Unlock</button></div>`;
 }
 function weightPicker(p, compact = false) {
-  const v = P[p].add; const list = weightChipList(p);
-  const chips = list.map(xv => `<button class="chip ${Math.abs(xv - v) < 1e-6 ? 'on' : ''}" data-a="w" data-p="${p}" data-v="${xv}">${fmtW(xv)}</button>`);
-  const custom = !!(machineForDraft(p) && machineForDraft(p).weightChips);
+  const list = weightChipList(p); const wm = wMode(p);
+  const chips = list.map(xv => `<button class="chip ${chipOn(p, xv) ? 'on' : ''}" data-a="w" data-p="${p}" data-v="${xv}">${fmtW(xv)}</button>`);
+  const custom = wm.cable;
+  const hsBtn = custom ? `<button class="chip sm hsbtn ${P[p].hs ? 'on' : ''}" data-a="hs" data-p="${p}" data-testid="hs-toggle" aria-pressed="${P[p].hs ? 'true' : 'false'}">＋${fmtW(hsVal())} horseshoe</button>` : '';
   const cls = compact ? ' wp-compact' : '';
   const showBase = p !== 'ed'; // entry sheet stays short — base lives on the log screen
   return `<div class="wpick${cls}">${showBase ? baseLineHTML(p) : ''}
-  <div class="wlabel" data-testid="working-label">Working <span class="bquiet">${custom ? '(cable)' : /dumbbell/i.test((machineForDraft(p) || {}).name || '') ? '(per dumbbell)' : '(plates / pin)'}</span></div>
+  <div class="wlabel" data-testid="working-label">Working <span class="bquiet">${custom ? '(cable stack)' : wm.ps ? '(plates per side)' : /dumbbell/i.test((machineForDraft(p) || {}).name || '') ? '(per dumbbell)' : '(plates / pin)'}</span>${hsBtn}</div>
   <div class="row wrow"><span class="fdots">${fineDots('wfine', p, -1)}</span>
   <button class="step" data-a="wstep" data-p="${p}" data-d="-1" aria-label="minus">−</button>
   <div class="grow bigval" id="wv-${p}" data-testid="weight-value">${weightBig(p)}</div>
@@ -532,10 +553,12 @@ function weightPicker(p, compact = false) {
   <div class="total" id="wt-${p}" data-testid="weight-total">${weightTotal(p)}</div></div>`;
 }
 // Big number = working/added weight (what you change every set)
-const weightBig = p => `${fmtW(P[p].add)}<small>${unit()}</small>`;
-const weightTotal = p => { const d = P[p];
-  if (d.noBase) return `Working <b>${fmtW(d.add)} ${unit()}</b> · <span data-testid="base-not-set">base not set — total filled in once set</span>`;
+const weightBig = p => wMode(p).ps ? `${fmtW(round1(P[p].add / 2))}<small>${unit()} / side</small>` : `${fmtW(P[p].add)}<small>${unit()}</small>`;
+const weightTotal = p => { const d = P[p]; const wm = wMode(p);
+  const work = wm.ps ? `2 × ${fmtW(round1(d.add / 2))} per side` : wm.hs ? `${fmtW(round1(d.add - wm.hs))} stack + ${fmtW(wm.hs)} horseshoe` : `${fmtW(d.add)} working`;
+  if (d.noBase) return `Working <b>${fmtW(d.add)} ${unit()}</b>${wm.ps || wm.hs ? ` <span class="bquiet">(${work})</span>` : ''} · <span data-testid="base-not-set">base not set — total filled in once set</span>`;
   const tot = round1(d.add + (d.base || 0));
+  if (wm.ps || wm.hs) return `Total <b>${fmtW(tot)} ${unit()}</b> <span class="bquiet" data-testid="weight-split">(${work} + ${fmtW(d.base || 0)} base)</span>`;
   // base 0 (weight stacks) is still a set base — show working + base
   return `Total <b>${fmtW(tot)} ${unit()}</b> <span class="bquiet">(${fmtW(d.add)} working + ${fmtW(d.base || 0)} base)</span>`;
 };
@@ -597,7 +620,8 @@ function centerChips(smooth) {
 }
 function updateWeightUI(p) {
   const v = P[p].add; const sc = $(`.wscroll[data-p="${p}"]`);
-  if (sc) $$('.chip', sc).forEach(c => c.classList.toggle('on', Math.abs(+c.dataset.v - v) < 1e-6));
+  if (sc) $$('.chip', sc).forEach(c => c.classList.toggle('on', chipOn(p, +c.dataset.v)));
+  $$(`.hsbtn[data-p="${p}"]`).forEach(b => { b.classList.toggle('on', !!P[p].hs); b.setAttribute('aria-pressed', P[p].hs ? 'true' : 'false'); });
   const el = $(`#wv-${p}`); if (el) el.innerHTML = weightBig(p);
   const t = $(`#wt-${p}`); if (t) t.innerHTML = weightTotal(p);
   centerChips(true); updateSetbarLabel();
@@ -694,11 +718,11 @@ async function buildExport() {
   const state = JSON.parse(JSON.stringify(S)); state.sync = Object.assign({}, state.sync, { token: '' }); // never export the secret
   return { app: 'liftlog', schema: 2, version: APP_VERSION, exportedAt: new Date().toISOString(), state, photos, journal: J.slice() }; // 2.5.7: activity log included
 }
-const CSV_COLS = ['date', 'template', 'mode', 'exercise', 'machine', 'gym', 'type', 'set', 'weight', 'added_weight', 'base_weight', 'unit', 'reps', 'difficulty',
+const CSV_COLS = ['date', 'template', 'mode', 'exercise', 'machine', 'brand', 'gym', 'type', 'set', 'weight', 'added_weight', 'base_weight', 'unit', 'reps', 'difficulty',
   'set_seconds', 'duration_min', 'distance', 'distance_unit', 'level', 'tags', 'note', 'thoughts'];
 function entryRow(s, e) {
   const m = machById(exById(e.exId), e.mId);
-  return { date: s.date, template: (tplById(s.tid) || {}).name || '', mode: s.mode, exercise: exName(e.exId), machine: machName(e.exId, e.mId), gym: m ? m.gym : '', type: e.kind,
+  return { date: s.date, template: (tplById(s.tid) || {}).name || '', mode: s.mode, exercise: exName(e.exId), machine: m ? m.name : machName(e.exId, e.mId), brand: m ? m.brand || '' : '', gym: m ? m.gym : '', type: e.kind,
     set: e.set || '', weight: e.kind === 'set' ? (e.base === null ? '' : e.w) : '', added_weight: e.kind === 'set' ? e.add : '', base_weight: e.kind === 'set' ? (e.base === null ? '' : (e.base || 0)) : '', unit: e.kind === 'set' ? (e.u || 'lb') : '',
     reps: e.reps || '', difficulty: e.diff || '', set_seconds: e.secs || '', duration_min: e.dur || '', distance: e.dist || '', distance_unit: e.kind === 'cardio' ? (e.du || '') : '', level: e.level || '',
     tags: (e.tags || []).join('; '), note: e.note || '', thoughts: (s.thoughts || {})[e.exId] || '',
@@ -806,11 +830,11 @@ function findMachByIncoming(phoneMs, fileM) {
   const byId = phoneMs.find(m => m.id === fileM.id);
   if (byId) return byId;
   const n = normName(fileM.name);
-  return phoneMs.find(m => normName(m.name) === n) || null;
+  return phoneMs.find(m => normName(m.name) === n && normName(m.brand) === normName(fileM.brand)) || phoneMs.find(m => normName(mFull(m)) === normName(mFull(fileM))) || null;
 }
 function cloneMachine(m) {
   const out = {
-    id: m.id, name: m.name, base: m.base === null || m.base === '' ? null : +m.base || 0,
+    id: m.id, brand: m.brand || '', name: m.name, base: m.base === null || m.base === '' ? null : +m.base || 0,
     bu: m.bu || 'lb', gym: m.gym || '', loc: m.loc || '', cues: m.cues || '', caution: m.caution || '',
     photoId: m.photoId || undefined, start: m.start || undefined
   };
@@ -821,7 +845,7 @@ function cloneMachine(m) {
    values it last received. A field counts as edited on the phone when it differs from that snapshot; phones from before 2.5.10 have
    no snapshot yet, so a field counts as edited when it matches neither the incoming value nor any value the catalog ever shipped
    for it (catalog.json fieldHistory). Edited fields are kept; everything else follows the catalog as before. Ids never change. */
-const CAT_MF = ['name', 'gym', 'loc', 'cues', 'caution', 'base'], CAT_EF = ['name', 'cues', 'pinned'];
+const CAT_MF = ['name', 'brand', 'gym', 'loc', 'cues', 'caution', 'base'], CAT_EF = ['name', 'cues', 'pinned'];
 const catNorm = (f, v) => f === 'base' ? ((v === null || v === '' || v === undefined) ? null : +v) : String(v == null ? '' : v);
 const catSnap = (o, fields) => { const r = {}; fields.forEach(f => { r[f] = catNorm(f, o[f]); }); return r; };
 function catEdited(phone, f, fileV, hist) {
@@ -832,7 +856,9 @@ function catEdited(phone, f, fileV, hist) {
 }
 function applyCatalogFields(phoneM, fileM, ex, hist) {
   const fv = catSnap(fileM, CAT_MF); let kept = 0;
-  ['name', 'gym', 'loc', 'cues', 'caution'].forEach(f => { if (catEdited(phoneM, f, fv[f], hist)) kept++; else phoneM[f] = fv[f]; });
+  // brand and name go together: a machine Sri renamed on the phone never gets a catalog brand glued onto his name (2.6.0)
+  const nameEdited = catEdited(phoneM, 'name', fv.name, hist);
+  ['name', 'brand', 'gym', 'loc', 'cues', 'caution'].forEach(f => { if ((f === 'brand' && nameEdited && fv.brand !== catNorm('brand', phoneM.brand)) || catEdited(phoneM, f, fv[f], hist)) kept++; else phoneM[f] = fv[f]; });
   if (fileM.photoId && (!phoneM.photoId || /^photo-[0-9a-f]{8}$/.test(phoneM.photoId))) phoneM.photoId = fileM.photoId; // a photo taken on the phone stays
   if (Array.isArray(fileM.weightChips) && fileM.weightChips.length) {
     phoneM.weightChips = fileM.weightChips.slice();
@@ -1203,8 +1229,9 @@ function mergeSheetRows(data) {
   const machFor = (ex, row) => {
     if (row.machine_id && machById(ex, str(row.machine_id))) return machById(ex, str(row.machine_id));
     const nm = str(row.machine);
-    let m = nm ? ex.machines.find(x => normName(x.name) === normName(nm)) : ex.machines[0];
-    if (!m) { m = { id: str(row.machine_id) || uid(), name: nm || 'Machine', base: str(row.base_weight) === '' ? null : +row.base_weight || 0, bu: str(row.unit) || 'lb', gym: /^austin$/i.test(str(row.gym)) ? 'Lakeway' : str(row.gym), loc: '', cues: '', caution: '' }; ex.machines.push(m); }
+    const br = str(row.brand); // 2.6.0 sheets: machine = name, brand = brand; older sheets: machine = full name
+    let m = nm ? ex.machines.find(x => (normName(x.name) === normName(nm) && (!br || normName(x.brand) === normName(br))) || normName(mFull(x)) === normName(br ? br + ' ' + nm : nm)) : ex.machines[0];
+    if (!m) { m = { id: str(row.machine_id) || uid(), brand: br, name: nm || 'Machine', base: str(row.base_weight) === '' ? null : +row.base_weight || 0, bu: str(row.unit) || 'lb', gym: /^austin$/i.test(str(row.gym)) ? 'Lakeway' : str(row.gym), loc: '', cues: '', caution: '' }; ex.machines.push(m); }
     return m;
   };
   const created = new Set();
@@ -1401,7 +1428,7 @@ function viewSession(sid) {
       } else {
         const tg = repeatTarget(ses, exId);
         if (tg) sub = `Target: ${esc(machName(exId, tg.mId))} · ${compactSets(tg.ents)}`;
-        else { const m = recentMachine(ex, ses.date); const l = m && lastFor(exId, m.id, ses.id); sub = l ? `Last: ${esc(m.name)} · ${esc(lastLine(l))}` : 'No history yet'; }
+        else { const m = recentMachine(ex, ses.date); const l = m && lastFor(exId, m.id, ses.id); sub = l ? `Last: ${esc(mLabel(m))} · ${esc(lastLine(l))}` : 'No history yet'; }
       }
     }
     return `<a class="li" href="#/s/${ses.id}/e/${exId}" data-testid="ex-row" data-ex="${exId}"><div class="grow"><div class="t">${esc(ex.name)}${ex.pinned ? ' ⚠️' : ''}</div><div class="s">${sub}</div></div>${badge}</a>`;
@@ -1459,7 +1486,7 @@ function baseSheetHTML() {
   const st = kg ? 2.5 : 5, max = kg ? 90 : 200; const all = []; for (let v = 0; v <= max + 1e-9; v = round1(v + st)) all.push(v);
   const on = v => BS.v !== null && Math.abs(BS.v - v) < 1e-6;
   const isOther = BS.other || (BS.v !== null && !bases.some(b => Math.abs(b - BS.v) < 1e-6));
-  return `<h2>Base weight for ${esc(m.name)}</h2>
+  return `<h2>Base weight for ${esc(mLabel(m))}</h2>
     <div class="sub">Plate numbers (what your coach writes down) are the <b>added</b> weight. The base is the bar / sled / carriage
       weight; 0 for weight stacks and dumbbells. You can change it any time.</div>
     <div class="bigval" style="font-size:34px;margin:10px 0" data-testid="bs-value">${BS.v === null ? 'Not set' : `${fmtW(BS.v)}<small>${unit()}</small>`}</div>
@@ -1498,6 +1525,7 @@ function initDraft(ses, ex, mId) {
       const raw = ref ? Math.max(0, (ref.base === null ? round1(conv(ref.add || 0, ref.u || 'lb', unit())) : dispW(ref)) - d.base) : 0;
       const mchips = m && m.weightChips && m.weightChips.length ? m.weightChips.map(c => round1(conv(+c, m.chipBu || 'lb', unit()))) : null;
       d.add = mchips && mchips.some(c => Math.abs(c - raw) < 0.06) ? snapToChips(raw, mchips) : keepFine(raw);
+      if (hsGuess(m, raw)) { d.hs = true; d.add = round1(raw); }
     }
     d.reps = today.length ? today[today.length - 1].reps : S.settings.defaultReps;
   }
@@ -1528,7 +1556,7 @@ function headsUp(ses, ex) {
 }
 function adviceFor(ex, mId) {
   const m = machById(ex, mId); const n = s => String(s || '').trim().toLowerCase();
-  const list = S.advice.filter(a => !a.dismissed && n(a.exercise) === n(ex.name) && (!a.machine || (m && n(a.machine) === n(m.name))));
+  const list = S.advice.filter(a => !a.dismissed && n(a.exercise) === n(ex.name) && (!a.machine || (m && [m.name, mLabel(m), mFull(m)].some(x => n(a.machine) === n(x)))));
   if (!list.length) return '';
   return `<div data-testid="advice" style="margin:8px 0">${list.map(a => `<div class="row" style="font-size:12px;color:var(--mut);padding:4px 0"><span class="grow"><b>Advice</b>${a.date ? ` (${esc(a.date)})` : ''}${a.machine ? ` · ${esc(a.machine)}` : ''}: ${esc(a.note)}</span>
     <button class="chip sm" data-a="dismiss-advice" data-id="${a.id}" style="min-height:34px">Dismiss</button></div>`).join('')}</div>`;
@@ -1555,7 +1583,7 @@ function machineGrid(ses, ex, mId, mode = 'grid') {
     const l = lastFor(ex.id, x.id, ses ? ses.id : null);
     const lastTxt = todayN ? `${ses.date === todayStr() ? 'today' : 'this day'}: ${compactSets(setsOf(ses, ex.id, x.id))}` : (l ? lastLine(l) : 'no history yet');
     return `<button class="mcard ${x.id === mId ? 'on' : ''}" data-a="mach" data-m="${x.id}" data-testid="mcard">${x.id === mo.recent ? '<span class="mdot" data-testid="mcard-recent" aria-label="most recently used"></span>' : ''}
-      <span class="mn">${esc(x.name)}</span><span class="ml" data-testid="mcard-last">${esc(lastTxt)}</span>
+      <span class="mn">${esc(mLabel(x))}</span><span class="ml" data-testid="mcard-last">${esc(lastTxt)}</span>
       ${machFine(x) ? `<span class="mf">${machFine(x)}</span>` : ''}${x.caution ? `<span class="mf mcaut" data-testid="mcard-caution">⚠️ ${esc(x.caution)}</span>` : ''}</button>`; }).join('');
   const add = `<button class="mcard add" data-a="new-mach" data-ex="${ex.id}" data-testid="mcard-new"><span class="mn">＋ New</span><span class="ml">machine</span></button>`;
   if (mode === 'strip') return `<div class="mstrip mwrap" data-testid="machines">${cards}${add}</div>`; // 2.5.9: wraps into a compact grid, never scrolls sideways
@@ -1580,10 +1608,10 @@ function viewExercise(sid, exId) {
   if (!m) {
     body = todaySetsHTML(ses, ex)
       + (recent && recentL ? `<div class="card lastm" data-testid="last-machine"><div class="sub">Last machine used</div>
-        <div class="lm-name">${esc(recent.name)}</div><div class="lm-val">${esc(lastLine(recentL, false))}</div>
+        <div class="lm-name">${esc(mLabel(recent))}</div><div class="lm-val">${esc(lastLine(recentL, false))}</div>
         <div class="sub">${esc(fmtD(recentL.date))}${lastEnt(recentL).diff ? ' · ' + esc(DIFF_SHORT[lastEnt(recentL).diff]) : ''}</div>
         ${machFine(recent) ? `<div class="fine">${machFine(recent)}</div>` : ''}
-        <button class="btn pri" style="margin-top:12px" data-a="mach" data-m="${recent.id}" data-testid="use-last-machine">Use ${esc(recent.name)}</button></div>`
+        <button class="btn pri" style="margin-top:12px" data-a="mach" data-m="${recent.id}" data-testid="use-last-machine">Use ${esc(mLabel(recent))}</button></div>`
       : ex.machines.length ? '' : `<div class="empty">No machines yet — add one (name, base weight, location…).</div>`)
       + (tg && tg.mId !== (recent && recent.id) ? `<div class="target">🎯 Repeat target (${esc(dowName(tg.src.date))}): ${esc(machName(exId, tg.mId))} <b>${compactSets(tg.ents)}</b></div>` : '')
       + `<h3>${recent ? 'Or pick a machine' : 'Pick a machine'}</h3>${machineGrid(ses, ex, null)}`;
@@ -1629,8 +1657,8 @@ function viewExercise(sid, exId) {
       </div>`;
   }
   return `<div class="top"><a class="back" href="#/s/${sid}">‹ ${esc((tplById(ses.tid) || {}).name || 'Session')}</a><span class="right exlinks"><a class="back" href="#/s/${sid}/e/${ex.id}/hist" data-testid="ex-history">History</a><a class="back" style="color:var(--mut)" href="#/set/e/${ex.id}">Edit</a></span></div>
-    ${pastBanner(ses.date)}<h1 class="ex-title">${esc(ex.name)}</h1>
-    ${m ? `<div class="row wrap"><span class="selm">${esc(m.name)}</span>${m.photoId ? `<button class="photo-link" data-a="photo" data-id="${m.photoId}" data-testid="photo-link">📷</button>` : ''}</div>
+    ${ses.date < todayStr() ? `<div class="ex-title-row"><h1 class="ex-title grow">${esc(ex.name)}</h1><div class="pastchip" data-testid="past-banner"><span>📅 <b>${esc(fmtD(ses.date))}</b></span><button class="chip sm" data-a="date-today" data-testid="back-today">Today ↩</button></div></div>` : `<h1 class="ex-title">${esc(ex.name)}</h1>`}
+    ${m ? `<div class="row wrap"><span class="selm" data-testid="sel-machine">${esc(mLabel(m))}</span>${m.photoId ? `<button class="photo-link" data-a="photo" data-id="${m.photoId}" data-testid="photo-link">📷</button>` : ''}</div>
       ${machFine(m) ? `<div class="fine" data-testid="loc">${machFine(m)}</div>` : ''}
       ${m.cues ? `<button class="fine cue1" data-a="show-cues" data-m="${m.id}" data-testid="m-cues">🧠 ${esc(m.cues)}</button>` : ''}` : ''}
     ${m ? '' : cuesHTML(ex, m)}
@@ -1641,7 +1669,7 @@ function viewExercise(sid, exId) {
 function viewConfirm(ses, ex) {
   const pdn = pendingDone; const p = draftKey(ses.id, ex.id); const d = P[p]; const m = machById(ex, d.mId);
   return `<div class="confirm" data-testid="confirm">
-    <div class="sub">${esc(ex.name)} · ${esc(m ? m.name : '')}</div>
+    <div class="sub">${esc(ex.name)} · ${esc(mLabel(m))}</div>
     <h1>Set ${pdn.setNo} done ✓</h1><div class="bigval" style="font-size:30px" data-testid="confirm-time">⏱ ${mmss(pdn.secs)}</div>
     <div class="sub" style="text-align:center;margin-bottom:6px">Confirm what you did</div>
     ${weightPicker(p, true)}
@@ -1693,7 +1721,7 @@ function openLock() {
   const setNo = nextSetNo(ses, ex.id, d.mId);
   lock = { sid: ses.id, exId: ex.id, setNo, t0: performance.now(), cleanup: [] };
   const el = document.createElement('div'); el.className = 'locked'; el.id = 'locked'; el.dataset.testid = 'locked';
-  el.innerHTML = `<div class="lk-head"><div class="lk-ex">${esc(ex.name)}</div><div class="sub">${esc(m.name)} · Set ${setNo} · ${fmtTotal(round1(d.add + d.base))} × ${d.reps}</div></div>
+  el.innerHTML = `<div class="lk-head"><div class="lk-ex">${esc(ex.name)}</div><div class="sub">${esc(mLabel(m))} · Set ${setNo} · ${fmtTotal(round1(d.add + d.base))} × ${d.reps}</div></div>
     <button class="lk-cancel" id="lk-cancel" data-testid="lk-cancel"><span class="fill"></span><span class="lbl">Hold to cancel</span></button>
     <div class="lk-timer" id="lk-timer" data-testid="lk-timer">0:00</div>
     <div class="lk-hint">Screen locked. Hold <b>both</b> Done buttons together to finish the set.</div>
@@ -1786,6 +1814,7 @@ function openEntrySheet(sid, id, keep) {
   if (e.kind === 'set') {
     const base = round1(conv(e.base || 0, e.u || 'lb', unit()));
     P[p] = { base, noBase: e.base === null, add: round1(dispW(e) - base), reps: e.reps, mId: e.mId };
+    P[p].hs = hsGuess(machById(exById(e.exId), e.mId), P[p].add);
   } else P[p] = { dur: e.dur, dist: e.dist || 0, level: e.level || 0 };
   Object.assign(P[p], { diff: e.diff || 3, tags: (e.tags || []).slice(), sid, id });
   P[p].moveTo = null; P[p].moveScope = 'one';
@@ -1831,26 +1860,147 @@ function openMoveSheet() {
   if (!MV || MV.id !== e.id) MV = { sid: s.id, id: e.id, scope: 'one', keep: edKeep() };
   const ex = exById(e.exId); const same = setsOf(s, e.exId, e.mId);
   const opts = sortedMachines(ex).filter(m => m.id !== e.mId).map(m => { const n = setsOf(s, ex.id, m.id).length;
-    return `<button class="entry" data-a="mach-move" data-m="${m.id}" data-testid="move-to"><span class="grow"><b>${esc(m.name)}</b><span class="note">${[machFine(m), noBase(m) ? '' : 'base ' + fmtW(baseOf(m)) + ' ' + unit(), n ? `${n} set${n === 1 ? '' : 's'} ${dayWordLc(s.date)}` : ''].filter(Boolean).join(' · ')}</span></span>→</button>`; }).join('');
+    return `<button class="entry" data-a="mach-move" data-m="${m.id}" data-testid="move-to"><span class="grow"><b>${esc(mLabel(m))}</b><span class="note">${[machFine(m), noBase(m) ? '' : 'base ' + fmtW(baseOf(m)) + ' ' + unit(), n ? `${n} set${n === 1 ? '' : 's'} ${dayWordLc(s.date)}` : ''].filter(Boolean).join(' · ')}</span></span>→</button>`; }).join('');
   openSheet(`<div data-testid="move-sheet"><h2>Move to machine</h2><div class="sub" style="margin-bottom:8px">${esc(ex.name)} · ${esc(fmtD(s.date))} · now on ${esc(machName(ex.id, e.mId))}</div>
     ${same.length > 1 ? `<div style="margin-bottom:8px" data-testid="move-scope">${seg('mvscope', [['one', 'Set ' + e.set + ' only'], ['all', `All ${same.length} sets here`]], MV.scope, '')}</div>` : ''}
     <div class="move-list">${opts || '<div class="empty">No other machines for this exercise.</div>'}</div>
     <button class="btn ghost" data-a="mach-back" data-testid="move-cancel">Cancel</button></div>`);
 }
-function moveSets(sid, ids, newMid) {
+function moveSets(sid, ids, newMid, toExId) {
   const s = sesById(sid); const ents = s.entries.filter(e => ids.includes(e.id) && e.kind === 'set'); if (!ents.length) return null;
-  const ex = exById(ents[0].exId); const m = machById(ex, newMid); if (!m) return null;
-  const before = ents.map(e => ({ e, mId: e.mId, set: e.set, base: e.base, w: e.w, u: e.u }));
+  const ex = exById(toExId || ents[0].exId); const m = machById(ex, newMid); if (!m) return null;
+  const before = ents.map(e => ({ e, exId: e.exId, mId: e.mId, set: e.set, base: e.base, w: e.w, u: e.u })); const exIds0 = s.exIds.slice();
   let n = s.entries.filter(e => e.kind === 'set' && e.exId === ex.id && e.mId === newMid && !ids.includes(e.id)).reduce((a, e) => Math.max(a, e.set || 0), 0);
   ents.sort((a, b) => a.ts - b.ts || a.set - b.set).forEach(e => {
     const u = e.u || 'lb';
     const nb = noBase(m) ? null : round1(conv(baseOf(m), unit(), u));
     const add = e.add != null ? e.add : round1((e.w || 0) - (e.base || 0));
-    e.add = add; e.base = nb; e.w = round1(add + (nb || 0)); e.mId = newMid; e.set = ++n;
+    e.add = add; e.base = nb; e.w = round1(add + (nb || 0)); e.exId = ex.id; e.mId = newMid; e.set = ++n;
   });
+  if (!s.exIds.includes(ex.id)) s.exIds.push(ex.id);
   markDirty(ents.map(e => e.id)); persist();
-  return { m, ents, undo: () => { before.forEach(b => Object.assign(b.e, { mId: b.mId, set: b.set, base: b.base, w: b.w, u: b.u }));
+  return { m, ex, ents, undo: () => { before.forEach(b => Object.assign(b.e, { exId: b.exId, mId: b.mId, set: b.set, base: b.base, w: b.w, u: b.u })); s.exIds = exIds0;
     const fx = S.sessions.filter(q => q.entries.some(x => before.some(b => b.e === x))).flatMap(fixSetCollisions); markDirty(before.map(b => b.e.id).concat(fx)); persist(); render(); } };
+}
+
+/* 2.6.0 "Move all" (exercise screen): every set of this exercise on that day, whatever machine it is on, goes to one machine of this
+   or any other exercise. Same weight rule as the per-set move (working weight kept, the new machine's base applied). Undo + log. */
+function openMoveAllSheet(sid, exId) {
+  const s = sesById(sid); const ex = exById(exId); if (!s || !ex) return;
+  const sets = setsOf(s, exId); if (!sets.length) return;
+  const on = new Set(sets.map(e => e.mId)); const one = on.size === 1 ? [...on][0] : null;
+  const row = (x, m) => { const n = setsOf(s, x.id, m.id).length;
+    return `<button class="entry" data-a="move-all-to" data-sid="${sid}" data-ex="${exId}" data-tex="${x.id}" data-m="${m.id}" data-testid="move-all-to"><span class="grow"><b>${esc(mLabel(m))}</b><span class="note">${[x.id !== exId ? esc(x.name) : '', machFine(m), noBase(m) ? 'base not set' : 'base ' + fmtW(baseOf(m)) + ' ' + unit(), n ? `${n} set${n === 1 ? '' : 's'} ${dayWordLc(s.date)}` : ''].filter(Boolean).join(' · ')}</span></span>→</button>`; };
+  const here = sortedMachines(ex).filter(m => m.id !== one).map(m => row(ex, m)).join('');
+  const others = Object.values(S.exercises).filter(x => x.id !== exId && !x.archived && x.kind === ex.kind && x.machines.length).sort((a, b) => a.name.localeCompare(b.name))
+    .map(x => `<div class="sub mvx">${esc(x.name)}</div>${sortedMachines(x).map(m => row(x, m)).join('')}`).join('');
+  openSheet(`<div data-testid="move-all-sheet"><h2>Move all ${sets.length} set${sets.length === 1 ? '' : 's'}</h2>
+    <div class="sub" style="margin-bottom:8px">${esc(ex.name)} · ${esc(fmtD(s.date))} · now on ${esc([...on].map(id => machName(exId, id)).join(', '))}</div>
+    <div class="move-list">${here || '<div class="sub">No other machines for this exercise.</div>'}</div>
+    <details class="mvother" data-testid="move-all-other"><summary>Another exercise…</summary><div class="move-list">${others || '<div class="sub">No other exercises.</div>'}</div></details>
+    <button class="btn ghost" data-a="sheet-cancel" data-testid="move-all-cancel">Cancel</button></div>`);
+}
+/* 2.6.0 "Merge into…" (Setup › machine): fold every logged entry of one machine into another machine (this exercise or any other).
+   Saved totals stay exactly as logged (weight, base, total); on a day where both machines have sets, the moved sets are numbered after
+   the target's in time order. Also re-attaches orphaned sets (srcMid no longer exists). One Activity-log entry; returns an undo. */
+function mergeMachine(srcExId, srcMid, dstExId, dstMid) {
+  const dEx = exById(dstExId), dst = machById(dEx, dstMid); const src = machById(exById(srcExId), srcMid);
+  if (!dst || (srcExId === dstExId && srcMid === dstMid)) return null;
+  const before = [], touched = [], days = new Set(), ids = [];
+  sortedSessions().forEach(s => {
+    const mv = s.entries.filter(e => e.exId === srcExId && e.mId === srcMid); if (!mv.length) return;
+    touched.push({ s, exIds: s.exIds.slice() });
+    let n = s.entries.filter(e => e.kind === 'set' && e.exId === dstExId && e.mId === dstMid && !mv.includes(e)).reduce((a, e) => Math.max(a, e.set || 0), 0);
+    mv.sort((a, b) => a.ts - b.ts || (a.set || 0) - (b.set || 0)).forEach(e => { before.push({ e, exId: e.exId, mId: e.mId, set: e.set });
+      e.exId = dstExId; e.mId = dstMid; if (e.kind === 'set') e.set = ++n; ids.push(e.id); });
+    if (!s.exIds.includes(dstExId)) s.exIds.push(dstExId); days.add(s.date);
+  });
+  Object.keys(P).forEach(k => { if (P[k] && P[k].mId === srcMid) delete P[k]; });
+  const srcLabel = src ? mLabel(src) : 'a removed machine';
+  if (ids.length) markDirty(ids);
+  jCtx = { action: 'machine-merge', label: `Merged ${srcLabel}${srcExId !== dstExId ? ` (${exName(srcExId)})` : ''} into ${mLabel(dst)}${srcExId !== dstExId ? ` (${dEx.name})` : ''} · ${ids.length} entr${ids.length === 1 ? 'y' : 'ies'} on ${days.size} day${days.size === 1 ? '' : 's'}` };
+  persist();
+  return { n: ids.length, days: days.size, src, dst, undo: () => {
+    before.forEach(b => Object.assign(b.e, { exId: b.exId, mId: b.mId, set: b.set })); touched.forEach(t => { t.s.exIds = t.exIds; });
+    const fx = touched.flatMap(t => fixSetCollisions(t.s)); markDirty(before.map(b => b.e.id).concat(fx)); persist(); render(); } };
+}
+function removeMachine(exId, mId, label) {
+  const ex = exById(exId); const i = ex ? ex.machines.findIndex(m => m.id === mId) : -1; if (i < 0) return null;
+  const m = ex.machines[i]; ex.machines.splice(i, 1); Object.keys(P).forEach(k => { if (P[k] && P[k].mId === mId) delete P[k]; });
+  jCtx = { action: 'machine-remove', label }; persist();
+  return () => { if (!machById(ex, mId)) ex.machines.splice(Math.min(i, ex.machines.length), 0, m); };
+}
+function openMergeSheet(exId, mId) {
+  const ex = exById(exId); const m = machById(ex, mId); if (!m) return;
+  const n = S.sessions.reduce((a, s) => a + s.entries.filter(e => e.exId === exId && e.mId === mId).length, 0);
+  const row = (x, t) => { const k = S.sessions.reduce((a, s) => a + s.entries.filter(e => e.exId === x.id && e.mId === t.id).length, 0);
+    return `<button class="entry" data-a="merge-to" data-ex="${exId}" data-m="${mId}" data-tex="${x.id}" data-tm="${t.id}" data-testid="merge-to"><span class="grow"><b>${esc(mLabel(t))}</b><span class="note">${[x.id !== exId ? esc(x.name) : '', machFine(t), k ? `${k} logged` : 'no history yet'].filter(Boolean).join(' · ')}</span></span>→</button>`; };
+  const here = sortedMachines(ex).filter(t => t.id !== mId).map(t => row(ex, t)).join('');
+  const others = Object.values(S.exercises).filter(x => x.id !== exId && !x.archived && x.kind === ex.kind && x.machines.length).sort((a, b) => a.name.localeCompare(b.name))
+    .map(x => `<div class="sub mvx">${esc(x.name)}</div>${sortedMachines(x).map(t => row(x, t)).join('')}`).join('');
+  openSheet(`<div data-testid="merge-sheet"><h2>Merge into…</h2>
+    <div class="sub" style="margin-bottom:8px">Moves all ${n} logged entr${n === 1 ? 'y' : 'ies'} of <b>${esc(mLabel(m))}</b> to the machine you pick. Weights stay exactly as logged.</div>
+    <div class="move-list">${here || '<div class="sub">No other machines for this exercise.</div>'}</div>
+    <details class="mvother"><summary>Another exercise…</summary><div class="move-list">${others}</div></details>
+    <button class="btn ghost" data-a="sheet-cancel">Cancel</button></div>`);
+}
+async function doMerge(srcExId, srcMid, dstExId, dstMid, opts = {}) {
+  const src = machById(exById(srcExId), srcMid), dst = machById(exById(dstExId), dstMid); if (!dst) return;
+  const n = S.sessions.reduce((a, s) => a + s.entries.filter(e => e.exId === srcExId && e.mId === srcMid).length, 0);
+  const sl = src ? mLabel(src) : 'the removed machine';
+  if (!await confirmSheet(`Merge into ${mLabel(dst)}?`, `Moves all ${n} logged entr${n === 1 ? 'y' : 'ies'} from "${sl}" to "${mLabel(dst)}"${srcExId !== dstExId ? ` (${exName(dstExId)})` : ''}. Weights and totals stay as logged. Undo is in the toast and the Activity log.`, 'Merge', 'pri')) return;
+  const r = mergeMachine(srcExId, srcMid, dstExId, dstMid); if (!r) return;
+  let unRemove = null;
+  if (src && !opts.keep && await confirmSheet(`Delete "${sl}"?`, 'It has no logged sets left. You can bring it back from the Activity log.', 'Delete it', 'bad'))
+    unRemove = removeMachine(srcExId, srcMid, `Removed ${sl} (empty after merge into ${mLabel(dst)})`);
+  ME = null; go(opts.ret || (unRemove ? `#/set/e/${dstExId}` : `#/set/e/${srcExId}`));
+  toast(`Merged ${r.n} entr${r.n === 1 ? 'y' : 'ies'} into ${mLabel(dst)}`, () => { if (unRemove) unRemove(); r.undo(); }, 8000);
+}
+/* 2.6.0 re-attach suggestions (Setup › Re-attach history). Never applied on their own: each one waits for a tap.
+   - orphaned: entries whose machine no longer exists on their exercise;
+   - look-alike pairs (same exercise): a machine with history next to a similarly named one (other words than the exercise name mostly
+     shared, same brand and gym if both have one) that has no sets yet or only newer sets → "Merge old into new?". */
+const RA_STOP = new Set(['machine', 'the', 'and', 'with', 'a', 'of', 'on', 'at']);
+const raToks = (txt, drop) => normName(txt).split(' ').filter(t => t && !RA_STOP.has(t) && !drop.has(t));
+function lookAlike(a, b, exTok) {
+  if (a.brand && b.brand && normName(a.brand) !== normName(b.brand)) return false;
+  if (a.gym && b.gym && normName(a.gym) !== normName(b.gym)) return false;
+  const brandTok = new Set(raToks([a.brand, b.brand].join(' '), new Set()));
+  const A = new Set(raToks(mFull(a), new Set([...exTok, ...brandTok]))), B = new Set(raToks(mFull(b), new Set([...exTok, ...brandTok])));
+  if (!A.size || !B.size) return !A.size && !B.size;
+  const common = [...A].filter(t => B.has(t)).length; return common / Math.min(A.size, B.size) >= 0.6;
+}
+function reattachSuggestions() {
+  const out = [], dis = new Set(S.reattachDismissed || []), orph = {}, stats = {};
+  S.sessions.forEach(s => s.entries.forEach(e => {
+    const ex = exById(e.exId); if (!ex || !e.mId) return;
+    if (!machById(ex, e.mId)) { const k = e.exId + '|' + e.mId; const o = orph[k] = orph[k] || { type: 'orphan', key: 'o:' + k, exId: e.exId, mId: e.mId, n: 0, last: '' }; o.n++; if (s.date > o.last) o.last = s.date; return; }
+    const k = e.exId + '|' + e.mId; const st = stats[k] = stats[k] || { n: 0, first: Infinity, last: -Infinity, lastDate: '' }; st.n++; st.first = Math.min(st.first, e.ts || 0); st.last = Math.max(st.last, e.ts || 0); if (s.date > st.lastDate) st.lastDate = s.date;
+  }));
+  out.push(...Object.values(orph));
+  Object.values(S.exercises).filter(ex => !ex.archived).forEach(ex => { const exTok = new Set(raToks(ex.name, new Set()));
+    ex.machines.forEach(a => { const sa = stats[ex.id + '|' + a.id]; if (!sa) return;
+      ex.machines.forEach(b => { if (a === b) return; const sb = stats[ex.id + '|' + b.id];
+        if (sb && !(sb.first > sa.last)) return;
+        if (lookAlike(a, b, exTok)) out.push({ type: 'pair', key: 'p:' + ex.id + ':' + a.id + '>' + b.id, exId: ex.id, from: a.id, to: b.id, n: sa.n, last: sa.lastDate, newer: sb ? sb.n : 0 }); }); }); });
+  return out.filter(x => !dis.has(x.key));
+}
+const reattachKey = () => reattachSuggestions().map(x => x.key).sort().join(',');
+function viewReattach() {
+  const list = reattachSuggestions();
+  const card = x => {
+    const ex = exById(x.exId);
+    if (x.type === 'orphan') return `<div class="card ra" data-testid="ra-orphan"><b>${x.n} ${esc(ex.name)} entr${x.n === 1 ? 'y' : 'ies'} from a machine that no longer exists</b><div class="sub">last ${esc(fmtD(x.last))} · pick the machine they belong to:</div>
+      <div class="chips" style="margin-top:6px">${sortedMachines(ex).map(m => `<button class="chip sm" data-a="ra-orphan" data-ex="${ex.id}" data-mid="${esc(x.mId)}" data-m="${m.id}" data-testid="ra-orphan-to">${esc(mLabel(m))}</button>`).join('')}</div>
+      <button class="chip sm" data-a="ra-dismiss" data-k="${esc(x.key)}">Leave as is</button></div>`;
+    const a = machById(ex, x.from), b = machById(ex, x.to);
+    return `<div class="card ra" data-testid="ra-pair"><b>${esc(mLabel(a))}</b> <span class="sub">(${x.n} logged, last ${esc(fmtD(x.last))})</span> looks like <b>${esc(mLabel(b))}</b> <span class="sub">(${x.newer ? x.newer + ' newer' : 'no history yet'})</span>
+      <div class="sub">${esc(ex.name)}</div><div class="row" style="margin-top:8px;gap:8px"><button class="btn sm pri" data-a="ra-merge" data-ex="${ex.id}" data-from="${a.id}" data-to="${b.id}" data-testid="ra-merge">Merge into ${esc(mLabel(b))}</button>
+      <button class="btn sm ghost" data-a="ra-dismiss" data-k="${esc(x.key)}" data-testid="ra-dismiss">Not the same</button></div></div>`;
+  };
+  return `<div class="top"><a class="back" href="#/settings">‹ Setup</a></div><h1>Re-attach history</h1>
+    <div class="sub">Sets that may belong to another machine (e.g. after a rename, or a machine added twice). Nothing changes until you tap; every merge is in the Activity log with Restore.</div>
+    <div data-testid="ra-list">${list.map(card).join('') || '<div class="empty" data-testid="ra-empty">Nothing to re-attach — all history is attached to a machine.</div>'}</div>`;
 }
 
 /* Change a set's date (2.5.5): move one entry (or all of that exercise's entries that day) to the same template's
@@ -2021,16 +2171,19 @@ function viewSetup(stepName) {
       return `<h2>${esc(t.name)}</h2>${ids.map(id => { const ex = exById(id); return `<div class="card" data-testid="wz-ex" data-ex="${id}">
         <div class="row"><b style="font-size:18px">${esc(ex.name)}</b><button class="chip sm right" data-a="wz-cues" data-ex="${id}">🧠 ${ex.cues ? 'Edit cues' : 'Add cues'}</button></div>
         ${ex.cues ? `<div class="fine">Cues: ${esc(ex.cues)}</div>` : ''}
-        ${sortedMachines(ex).map(m => `<button class="entry" data-a="edit-mach" data-ex="${id}" data-m="${m.id}" data-testid="wz-mach"><span class="grow"><b>${esc(m.name)}</b><span class="note">${machSummary(m)}</span></span>✎</button>`).join('')}
+        ${sortedMachines(ex).map(m => `<button class="entry" data-a="edit-mach" data-ex="${id}" data-m="${m.id}" data-testid="wz-mach"><span class="grow"><b>${esc(mLabel(m))}</b><span class="note">${machSummary(m)}</span></span>✎</button>`).join('')}
         <button class="btn sm ghost" style="margin-top:8px" data-a="new-mach" data-ex="${id}" data-testid="wz-add-mach">＋ Add machine</button></div>`; }).join('')}`; }).join('') || '<div class="empty">No exercises yet — go back a step.</div>'}
     <div class="row"><a class="btn ghost" href="#/setup/days">Back</a><button class="btn pri" data-a="wz-finish" data-testid="wz-finish">Finish setup</button></div></div>`;
 }
 
 /* ---------------- View: machine editor (setup) ---------------- */
 let ME = null, meReturn = null;
+const KNOWN_BRANDS = ['Hammer Strength', 'Nautilus', 'Nautilus Leverage', 'Nautilus Impact', 'Nautilus Inspiration', 'HOIST', 'Matrix', 'Life Fitness', 'Cybex', 'Precor', 'Technogym', 'Star Trac'];
+const knownBrands = () => { const b = new Set(KNOWN_BRANDS); Object.values(S.exercises).forEach(e => e.machines.forEach(m => { if (m.brand) b.add(m.brand.trim()); })); return [...b]; };
+const meSide = () => ME ? (ME.perSide != null ? !!ME.perSide : perSideAuto({ brand: ME.brand, name: ME.name })) : false;
 function initME(exId, mId) {
   const ex = exById(exId); const m = mId !== 'new' && machById(ex, mId);
-  ME = { exId, key: mId, isNew: !m, name: m ? m.name : '', gym: m ? m.gym : homeGym(), loc: m ? m.loc : '', cues: m ? m.cues : '', caution: m ? m.caution || '' : '', base: m ? (noBase(m) ? null : baseOf(m)) : 0,
+  ME = { exId, key: mId, isNew: !m, brand: m ? m.brand || '' : '', perSide: m && m.perSide != null ? !!m.perSide : null, name: m ? m.name : '', gym: m ? m.gym : homeGym(), loc: m ? m.loc : '', cues: m ? m.cues : '', caution: m ? m.caution || '' : '', base: m ? (noBase(m) ? null : baseOf(m)) : 0,
     photoId: m ? m.photoId || null : null, origPhoto: m ? m.photoId || null : null, hasStart: m ? !!m.start : ex.kind !== 'cardio',
     startReps: m && m.start ? m.start.reps || null : null };
   // new machine: default the starting weight to the exercise's latest total on any machine (a sensible first guess)
@@ -2047,15 +2200,20 @@ function viewMachineEdit(exId, mId) {
   const gyms = knownGyms(); const bases = unit() === 'kg' ? BASE_CHIPS_KG : BASE_CHIPS_LB;
   return `<div class="top"><button class="back" data-a="me-cancel">‹ Cancel</button></div>
     <h1>${ME.isNew ? 'New machine' : 'Edit machine'}</h1><div class="sub">${esc(ex.name)}</div>
-    <h3>Name</h3><input class="field" data-i="me-name" value="${esc(ME.name)}" placeholder="Short name, e.g. Hammer Strength" data-testid="me-name">
-    ${used ? '<div class="fine">Renaming keeps all history for this machine.</div>' : ''}
+    <h3>Brand</h3><input class="field" data-i="me-brand" value="${esc(ME.brand || '')}" placeholder="e.g. Hammer Strength (blank if unsure)" data-testid="me-brand" autocomplete="off">
+    <div class="chips brandchips" data-testid="me-brands">${knownBrands().map(b => `<button class="chip sm ${ME.brand === b ? 'on' : ''}" data-a="me-brand" data-v="${esc(b)}">${esc(b)}</button>`).join('')}<button class="chip sm ${!ME.brand ? 'on' : ''}" data-a="me-brand" data-v="">No brand</button></div>
+    <h3>Name</h3><input class="field" data-i="me-name" value="${esc(ME.name)}" placeholder="e.g. Select Chest Press" data-testid="me-name">
+    <div class="fine" data-testid="me-label">Shows as: <b>${esc(mLabel({ brand: (ME.brand || '').trim(), name: (ME.name || '').trim() }) || '—')}</b></div>
+    ${used ? '<div class="fine">Changing the brand or name keeps all history for this machine.</div>' : ''}
     <h3>Gym</h3><div class="chips">${gyms.map(g => `<button class="chip sm ${ME.gym === g ? 'on' : ''}" data-a="me-gym" data-v="${esc(g)}">${esc(g)}${g === homeGym() ? ' 🏠' : ''}</button>`).join('')}
       <button class="chip sm ${!ME.gym ? 'on' : ''}" data-a="me-gym" data-v="">No tag</button><button class="chip sm add" data-a="me-gym-new">＋ New gym</button></div>
     <h3>Location note (optional)</h3><input class="field" data-i="me-loc" value="${esc(ME.loc)}" placeholder="e.g. back wall, by the windows" data-testid="me-loc">
     ${ex.kind !== 'cardio' ? `<h3>Base weight (bar / sled / carriage)</h3>
     <div class="row"><button class="step" data-a="me-bstep" data-d="-1">−</button><div class="grow bigval" style="font-size:34px" data-testid="me-base">${ME.base === null ? 'Not set' : `${fmtW(ME.base)}<small>${unit()}</small>`}</div><button class="step" data-a="me-bstep" data-d="1">+</button></div>
     <div class="chips">${bases.map(b => `<button class="chip sm ${ME.base !== null && Math.abs(ME.base - b) < 1e-6 ? 'on' : ''}" data-a="me-base" data-v="${b}">${b}</button>`).join('')}<button class="chip sm ${ME.base === null ? 'on' : ''}" data-a="me-base" data-v="">Not set</button></div>
-    <div class="fine">0 for weight stacks and dumbbells. Weight chips then pick the <b>added</b> weight and the app shows added + base = total.</div>` : ''}
+    <div class="fine">0 for weight stacks and dumbbells. Weight chips then pick the <b>added</b> weight and the app shows added + base = total.</div>
+    ${hasChips(machById(ex, mId)) ? '' : `<h3>Plate entry</h3><div data-testid="me-ps">${seg('me-ps', [['total', 'Total'], ['side', 'Per side (×2)']], meSide() ? 'side' : 'total')}</div>
+    <div class="fine">Per side: enter the plates on one side; total = 2 × per side + base (Iso-Lateral / plate-loaded machines).</div>`}` : ''}
     <h3>Coaching cues for this machine (optional)</h3><textarea class="field" data-i="me-cues" placeholder="e.g. seat 4, handles mid-chest" data-testid="me-cues">${esc(ME.cues)}</textarea>
     <h3>Caution for this machine (optional)</h3><textarea class="field" data-i="me-caution" placeholder="e.g. don't force depth if the shoulder pinches" data-testid="me-caution">${esc(ME.caution || '')}</textarea>
     <h3>Photo (optional)</h3><div class="chips"><button class="chip sm" data-a="me-photo" data-cap="environment">📷 Take photo</button>
@@ -2065,7 +2223,9 @@ function viewMachineEdit(exId, mId) {
     ${ME.hasStart ? `<div class="fine" style="margin:8px 0">Shown as "last time" until you log this machine.</div>${weightPicker('me')}
       <h3>Starting reps (optional)</h3><div class="chips">${[null, 6, 8, 10, 12, 15].map(r => `<button class="chip sm ${ME.startReps === r ? 'on' : ''}" data-a="me-reps" data-v="${r == null ? '' : r}">${r == null ? 'none' : r}</button>`).join('')}</div>` : ''}` : ''}
     <div style="height:20px"></div><button class="btn pri" data-a="me-save" data-testid="me-save">Save machine</button>
-    ${!ME.isNew ? `<button class="btn bad" data-a="me-del">${used ? 'Delete (has history — rename instead)' : 'Delete machine'}</button>` : ''}`;
+    ${!ME.isNew ? `<button class="btn ghost" data-a="me-merge" data-testid="me-merge">Merge into another machine…</button>
+    <div class="fine" style="margin-bottom:8px">Moves this machine's whole history onto another machine (picked wrong, or added twice). Undo + Activity log.</div>
+    <button class="btn bad" data-a="me-del">${used ? 'Delete (has history — rename or merge instead)' : 'Delete machine'}</button>` : ''}`;
 }
 
 /* ---------------- View: exercise history (2.5.9, read-only) ----------------
@@ -2079,7 +2239,7 @@ function viewExHistory(sid, exId) {
   const all = []; S.sessions.forEach(x => x.entries.forEach(e => { if (e.exId === exId) all.push({ e, x }); }));
   all.sort((a, b) => (b.x.date > a.x.date ? 1 : b.x.date < a.x.date ? -1 : 0) || (b.e.ts || 0) - (a.e.ts || 0) || (b.e.set || 0) - (a.e.set || 0));
   const mOf = e => machById(ex, e.mId);
-  const mLabel = e => { const m = mOf(e); return m ? esc(m.name) + (m.loc ? ` <span class="hloc">(${esc(m.loc)})</span>` : '') : '(deleted machine)'; };
+  const hLabel = e => { const m = mOf(e); return m ? esc(mLabel(m)) + (m.loc ? ` <span class="hloc">(${esc(m.loc)})</span>` : '') : '(deleted machine)'; };
   const wtxt = e => { if (e.kind === 'cardio') return cardioSummary(e);
     const add = e.add != null ? cv(e.add, e) : null, base = e.base == null ? null : cv(e.base, e);
     const tot = e.base === null ? null : round1(dispW(e));
@@ -2090,16 +2250,16 @@ function viewExHistory(sid, exId) {
   const byM = {}; all.forEach(r => { (byM[r.e.mId] = byM[r.e.mId] || []).push(r); });
   const short = r => r.e.kind === 'cardio' ? cardioSummary(r.e) : `${fmtW(r.e.base === null ? cv(r.e.add, r.e) : dispW(r.e))}${r.e.base === null ? '+base?' : ''}×${r.e.reps}`;
   const sum = Object.entries(byM).map(([mId, rs]) => { const best = rs.slice().sort((a, b) => a.e.kind === 'cardio' ? (b.e.dur || 0) - (a.e.dur || 0) : (dispW(b.e) - dispW(a.e)) || (b.e.reps - a.e.reps))[0]; const last = rs[0];
-    return `<div class="hsum-row" data-testid="hsum-row" data-m="${esc(mId)}"><b>${mLabel(last.e)}</b><div class="sub">best <b>${short(best)}</b> · ${esc(fmtShort(best.x.date))} &nbsp;·&nbsp; last <b>${short(last)}</b> · ${esc(fmtShort(last.x.date))} &nbsp;·&nbsp; ${rs.length} ${rs[0].e.kind === 'cardio' ? 'entr' + (rs.length === 1 ? 'y' : 'ies') : 'set' + (rs.length === 1 ? '' : 's')}</div></div>`; }).join('');
+    return `<div class="hsum-row" data-testid="hsum-row" data-m="${esc(mId)}"><b>${hLabel(last.e)}</b><div class="sub">best <b>${short(best)}</b> · ${esc(fmtShort(best.x.date))} &nbsp;·&nbsp; last <b>${short(last)}</b> · ${esc(fmtShort(last.x.date))} &nbsp;·&nbsp; ${rs.length} ${rs[0].e.kind === 'cardio' ? 'entr' + (rs.length === 1 ? 'y' : 'ies') : 'set' + (rs.length === 1 ? '' : 's')}</div></div>`; }).join('');
   let lastD = null; const rows = all.map(({ e, x }) => { const head = x.date !== lastD ? `<h3 class="hday" data-testid="hday">${esc(fmtD(x.date))} <span class="sub">· ${esc((tplById(x.tid) || {}).name || 'Workout')}</span></h3>` : ''; lastD = x.date;
-    return `${head}<div class="hrow" data-testid="hrow" data-id="${esc(e.id)}"><span class="hm">${mLabel(e)}</span> · ${e.kind === 'set' ? `<b>S${e.set}</b> · ` : ''}<b>${esc(wtxt(e))}</b>${e.diff ? ` · ${esc(DIFF_SHORT[e.diff] || 'difficulty ' + e.diff)}` : ''}${chips(e) ? ` <span class="hchips">${chips(e)}</span>` : ''}</div>`; }).join('');
+    return `${head}<div class="hrow" data-testid="hrow" data-id="${esc(e.id)}"><span class="hm">${hLabel(e)}</span> · ${e.kind === 'set' ? `<b>S${e.set}</b> · ` : ''}<b>${esc(wtxt(e))}</b>${e.diff ? ` · ${esc(DIFF_SHORT[e.diff] || 'difficulty ' + e.diff)}` : ''}${chips(e) ? ` <span class="hchips">${chips(e)}</span>` : ''}</div>`; }).join('');
   return `<div class="top"><a class="back" href="${back}" data-testid="hist-back">‹ Back</a></div>
     <h1 class="ex-title">${esc(ex.name)} · history</h1><div class="sub">Read-only · every logged ${ex.kind === 'cardio' ? 'entry' : 'set'}, newest first · weights in ${u}</div>
     <div class="exhist" data-testid="ex-hist">${all.length ? `<div class="hsum card" data-testid="hsum">${sum}</div>${rows}` : '<div class="empty">Nothing logged yet.</div>'}</div>`;
 }
 /* ---------------- View: Settings ---------------- */
 /* ---------------- View: Activity log (2.5.7) ---------------- */
-const J_RESTORABLE = new Set(['set-delete', 'session-delete', 'move-date', 'move-machine', 'machine-remove']);
+const J_RESTORABLE = new Set(['set-delete', 'session-delete', 'move-date', 'move-machine', 'machine-remove', 'machine-merge', 'brand-split']);
 let jShow = 150;
 function viewJournal(day) {
   const dayOf = e => ymd(new Date(e.ts));
@@ -2129,12 +2289,14 @@ function viewJournal(day) {
 /* "Restore this": put deleted / moved records back exactly as they were before that entry (sets, their session). Logged itself. */
 function jRestore(id) {
   const e = J.find(x => x.id === id); if (!e) return toast('Entry not found');
+  if (e.action === 'brand-split') { const n = undoBrandSplit(e); if (!n) return toast('Nothing to restore');
+    jCtx = { action: 'restore', label: 'Restored · ' + e.label, ref: e.id }; persist(); render(); return toast(`Old names back on ${n} machine${n === 1 ? '' : 's'}`); }
   const touched = new Set(), ids = [], machs = [];
   // machines this entry removed (2.5.10 San Jose clean-up) come back exactly as they were, same id, if their exercise is still there
   e.changes.filter(c => c.k.startsWith('machine:') && c.type === 'del' && c.before).forEach(c => {
     const b = JSON.parse(JSON.stringify(c.before)); const ex = exById(b.exId); delete b.exId;
     if (ex && !machById(ex, b.id)) { ex.machines.push(b); machs.push(b.name); } });
-  const isPrimary = c => c.type === 'del' || (c.type === 'mod' && (c.before.sid !== c.after.sid || c.before.mId !== c.after.mId || c.before.date !== c.after.date));
+  const isPrimary = c => c.type === 'del' || (c.type === 'mod' && (c.before.sid !== c.after.sid || c.before.mId !== c.after.mId || c.before.exId !== c.after.exId || c.before.date !== c.after.date));
   // sessions that this entry deleted come back first (wrap-up, notes, exercise list as they were)
   e.changes.filter(c => c.k.startsWith('session:') && c.before && !sesById(c.before.id) && c.type === 'del').forEach(c => { const x = JSON.parse(JSON.stringify(c.before)); x.entries = []; S.sessions.push(x); });
   e.changes.filter(c => c.k.startsWith('entry:') && c.before && isPrimary(c)).forEach(c => {
@@ -2148,6 +2310,10 @@ function jRestore(id) {
     return toast(machs.length === 1 ? `Restored machine ${machs[0]}` : `Restored ${machs.length} machines`); }
   if (!ids.length) return toast('Nothing to restore');
   const fx = []; touched.forEach(q => { if (!q.entries.some(x => ids.includes(x.id))) renumberSets(q, [...new Set(ids.map(i => (e.changes.find(c => c.k === 'entry:' + i) || {}).before).filter(Boolean).map(b => b.exId))]); fx.push(...fixSetCollisions(q)); });
+  // exercises this entry added to a day's list (2.6.0 move to another exercise) come off again if nothing is logged on them now
+  e.changes.filter(c => c.k.startsWith('session:') && c.type === 'mod' && c.before && c.after).forEach(c => { const q = sesById(c.after.id); if (!q) return;
+    const added = (c.after.exIds || []).filter(x => !(c.before.exIds || []).includes(x));
+    added.forEach(x => { if (!q.entries.some(en => en.exId === x)) q.exIds = q.exIds.filter(y => y !== x); }); });
   // a session this entry created (e.g. the move's target day) goes away only if nothing is left in it
   e.changes.filter(c => c.k.startsWith('session:') && c.type === 'add').forEach(c => { const q = sesById(c.after.id); if (q && sesEmpty(q)) S.sessions = S.sessions.filter(x => x !== q); });
   const renum = [...touched].flatMap(q => q.entries.filter(x => x.kind === 'set').map(x => x.id));
@@ -2162,6 +2328,7 @@ function viewSettings() {
   <div class="row verrow" data-testid="app-version"><span class="grow">Lift Log <b>v${APP_VERSION}</b>${updateReady ? ' · <span style="color:var(--acc)">update ready</span>' : ''}</span>
     <button class="chip sm" data-a="check-update" data-testid="check-update">Check for update</button></div>
   <div style="height:10px"></div><a class="btn" href="#/set/log" data-testid="open-log">🧾 Activity log <span class="sub">· every change, with Restore</span></a>
+  <a class="btn" href="#/set/reattach" data-testid="open-reattach">🔗 Re-attach history <span class="sub">· ${(() => { const n = reattachSuggestions().length; return n ? `${n} suggestion${n === 1 ? '' : 's'}` : 'nothing to fix'; })()}</span></a>
   <a class="btn" href="#/setup">✨ Run setup wizard (bulk add exercises & machines)</a>
   <h2>Units</h2>${seg('set-unit', [['lb', 'Pounds (lb)'], ['kg', 'Kilograms (kg)']], st.unit)}
   <h3>Weight step</h3><div class="chips">${(st.unit === 'kg' ? [1, 2.5, 5] : [2.5, 5, 10]).map(v => `<button class="chip ${v === step() ? 'on' : ''}" data-a="set-step" data-v="${v}">${v} ${st.unit}</button>`).join('')}</div>
@@ -2217,7 +2384,7 @@ function viewExList() {
   const all = Object.values(S.exercises).filter(e => !e.archived).sort((a, b) => a.kind.localeCompare(b.kind) * -1 || a.name.localeCompare(b.name));
   return `<div class="top"><a class="back" href="#/settings">‹ Setup</a></div><h1>Exercises</h1>
     <button class="btn ghost" data-a="ex-new">＋ New exercise</button>
-    <div class="list">${all.map(e => `<a class="li" href="#/set/e/${e.id}"><div><div class="t">${esc(e.name)}${e.pinned ? ' ⚠️' : ''}</div><div class="s">${e.kind === 'cardio' ? 'Cardio · ' : ''}${sortedMachines(e).map(m => esc(m.name) + (m.photoId ? ' 📷' : '')).join(', ') || 'no machines'}</div></div></a>`).join('') || '<div class="empty">No exercises yet. Use the setup wizard.</div>'}</div>`;
+    <div class="list">${all.map(e => `<a class="li" href="#/set/e/${e.id}"><div><div class="t">${esc(e.name)}${e.pinned ? ' ⚠️' : ''}</div><div class="s">${e.kind === 'cardio' ? 'Cardio · ' : ''}${sortedMachines(e).map(m => esc(mLabel(m)) + (m.photoId ? ' 📷' : '')).join(', ') || 'no machines'}</div></div></a>`).join('') || '<div class="empty">No exercises yet. Use the setup wizard.</div>'}</div>`;
 }
 function viewExEdit(exId) {
   const ex = exById(exId); if (!ex) return `<div class="empty">Exercise not found. <a href="#/set/ex">Back</a></div>`;
@@ -2232,7 +2399,7 @@ function viewExEdit(exId) {
     <textarea class="field" id="pin-text" placeholder="e.g. Shoulder injury — keep elbows tucked">${esc(ex.pinned)}</textarea>
     <div class="row" style="margin-top:8px"><button class="btn sm" data-a="ex-pin-save" data-ex="${ex.id}">Save caution</button>${ex.pinned ? `<button class="btn sm ghost" data-a="unpin" data-ex="${ex.id}">Unpin</button>` : ''}</div>
     <h3>Machines (home gym first)</h3>
-    ${sortedMachines(ex).map(m => `<button class="entry" data-a="edit-mach" data-ex="${ex.id}" data-m="${m.id}" data-testid="mach-row"><span class="grow"><b>${esc(m.name)}</b><span class="note">${machSummary(m)}</span></span>✎</button>`).join('') || '<div class="sub">No machines yet.</div>'}
+    ${sortedMachines(ex).map(m => `<button class="entry" data-a="edit-mach" data-ex="${ex.id}" data-m="${m.id}" data-testid="mach-row"><span class="grow"><b>${esc(mLabel(m))}</b><span class="note">${machSummary(m)}</span></span>✎</button>`).join('') || '<div class="sub">No machines yet.</div>'}
     <div style="height:10px"></div><button class="btn ghost" data-a="new-mach" data-ex="${ex.id}">＋ Add machine / equipment</button>
     <div style="height:24px"></div><button class="btn bad" data-a="ex-archive" data-ex="${ex.id}">Delete exercise (keeps history)</button>`;
 }
@@ -2254,6 +2421,7 @@ function render() {
   else if (r[0] === 'set' && r[1] === 't') { html = viewTplEdit(r[2]); tab = 'settings'; }
   else if (r[0] === 'set' && r[1] === 'ex') { html = viewExList(); tab = 'settings'; }
   else if (r[0] === 'set' && r[1] === 'log') { html = viewJournal(r[2] || null); tab = 'settings'; }
+  else if (r[0] === 'set' && r[1] === 'reattach') { html = viewReattach(); tab = 'settings'; }
   else if (r[0] === 'set' && r[1] === 'e') { html = viewExEdit(r[2]); tab = 'settings'; }
   else if (r[0] === 'set' && r[1] === 'm') { html = viewMachineEdit(r[2], r[3]); tab = 'settings'; }
   else html = viewToday();
@@ -2304,8 +2472,23 @@ document.addEventListener('click', async ev => {
       const ids = mv.scope === 'all' ? setsOf(s, e.exId, e.mId).map(x => x.id) : [e.id];
       const r = moveSets(mv.sid, ids, ds.m); MV = null; if (!r) return;
       openEntrySheet(mv.sid, mv.id, mv.keep); render();
-      return toast(`Moved ${r.ents.length === 1 ? 'Set → ' : r.ents.length + ' sets → '}${r.m.name}`, () => { closeSheet(null); r.undo(); });
+      return toast(`Moved ${r.ents.length === 1 ? 'Set → ' : r.ents.length + ' sets → '}${mLabel(r.m)}`, () => { closeSheet(null); r.undo(); });
     }
+    case 'move-all': return openMoveAllSheet(ds.sid, ds.ex);
+    case 'move-all-to': {
+      const s = sesById(ds.sid); if (!s) return; const ids = setsOf(s, ds.ex).filter(e => !(ds.tex === ds.ex && e.mId === ds.m)).map(e => e.id);
+      const tm = machById(exById(ds.tex), ds.m); if (!tm || !ids.length) return closeSheet(null);
+      jCtx = { action: 'move-machine', label: `Moved all ${ids.length} ${exName(ds.ex)} set${ids.length === 1 ? '' : 's'} (${fmtD(s.date)}) → ${mLabel(tm)}${ds.tex !== ds.ex ? ` (${exName(ds.tex)})` : ''}` };
+      const r = moveSets(ds.sid, ids, ds.m, ds.tex); closeSheet(null); if (!r) { jCtx = null; return; }
+      delete P[draftKey(ds.sid, ds.ex)]; delete P[draftKey(ds.sid, ds.tex)];
+      if (ds.tex !== ds.ex) go(`#/s/${ds.sid}/e/${ds.tex}`); else render();
+      return toast(`Moved ${r.ents.length} set${r.ents.length === 1 ? '' : 's'} → ${mLabel(r.m)}`, () => { r.undo(); delete P[draftKey(ds.sid, ds.ex)]; delete P[draftKey(ds.sid, ds.tex)]; if (ds.tex !== ds.ex) go(`#/s/${ds.sid}/e/${ds.ex}`); }, 8000);
+    }
+    case 'me-merge': return openMergeSheet(ME.exId, ME.key);
+    case 'merge-to': return doMerge(ds.ex, ds.m, ds.tex, ds.tm, { ret: meReturn && !/\/set\/m\//.test(meReturn) ? meReturn : null });
+    case 'ra-merge': return doMerge(ds.ex, ds.from, ds.ex, ds.to, { ret: '#/set/reattach' });
+    case 'ra-orphan': return doMerge(ds.ex, ds.mid, ds.ex, ds.m, { ret: '#/set/reattach' });
+    case 'ra-dismiss': S.reattachDismissed = (S.reattachDismissed || []).concat(ds.k); persist(); return render();
     case 'repeat': return startSession(ds.t, 'solo', ds.sid);
     case 'j-restore': { const e = J.find(x => x.id === ds.id); if (!e) return;
       if (!await confirmSheet('Restore this?', `Puts back what this changed, as it was: “${e.label}”. Nothing else is removed, and the restore is logged too.`, 'Restore', 'pri')) return;
@@ -2313,7 +2496,7 @@ document.addEventListener('click', async ev => {
     case 'j-more': jShow += 150; return render();
     case 'show-cues': { const ex = curEx && exById(curEx.exId); const m = ex && machById(ex, ds.m); if (!m) return; // 2.5.9: one-line machine cue → full text
       const c = [ex.cues, m.cues].filter(Boolean).join(' · ');
-      return openSheet(`<div data-testid="cues-sheet"><h2>${esc(m.name)}</h2><div class="sub" style="margin-bottom:8px">${machFine(m)}</div><div class="cues-full">🧠 ${esc(c)}</div><div style="height:12px"></div><button class="btn ghost" data-a="sheet-cancel" data-testid="cues-close">Close</button></div>`); }
+      return openSheet(`<div data-testid="cues-sheet"><h2>${esc(mLabel(m))}</h2><div class="sub" style="margin-bottom:8px">${machFine(m)}</div><div class="cues-full">🧠 ${esc(c)}</div><div style="height:12px"></div><button class="btn ghost" data-a="sheet-cancel" data-testid="cues-close">Close</button></div>`); }
     case 'finish': { const s = sesById(ds.sid); syncNow(); if (!s || (!s.entries.length && !s.wrap)) { toast('Saved. Nice work!'); return go('#/today'); }
       W = null; wrapReturn = '#/today'; return go(`#/w/${s.id}`); }
     case 'open-wrap': W = null; wrapReturn = `#/h/${ds.sid}`; return go(`#/w/${ds.sid}`);
@@ -2328,7 +2511,7 @@ document.addEventListener('click', async ev => {
     case 'lock-base': baseUnlocked.delete(ds.m); return render();
     case 'bs-chip': BS.v = +ds.v; BS.other = !!ds.o; return showBaseSheet();
     case 'bs-other': BS.other = true; if (BS.v === null) BS.v = unit() === 'kg' ? 20 : 45; return showBaseSheet();
-    case 'bs-save': { const ex = exById(BS.exId), m = machById(ex, BS.mId); setMachineBase(ex, m, BS.v); baseUnlocked.delete(m.id); persist(); closeSheet(); toast(`Base for ${m.name}: ${fmtW(BS.v)} ${unit()}`); BS = null; return render(); }
+    case 'bs-save': { const ex = exById(BS.exId), m = machById(ex, BS.mId); setMachineBase(ex, m, BS.v); baseUnlocked.delete(m.id); persist(); closeSheet(); toast(`Base for ${mLabel(m)}: ${fmtW(BS.v)} ${unit()}`); BS = null; return render(); }
     case 'bs-later': if (BS) baseLater.add(BS.mId); BS = null; closeSheet(); return render();
     case 'base-later': baseLater.add(ds.m); return render();
     case 'm-unpin': { const m = machById(exById(curEx.exId), ds.m); if (m) { m.caution = ''; persist(); render(); toast('Caution removed (edit it in Setup)'); } return; }
@@ -2362,15 +2545,17 @@ document.addEventListener('click', async ev => {
     }
     case 'new-mach': meReturn = location.hash; ME = null; return go(`#/set/m/${ds.ex}/new`);
     case 'edit-mach': meReturn = location.hash; ME = null; return go(`#/set/m/${ds.ex}/${ds.m}`);
-    case 'w': pk.add = +ds.v; return updateWeightUI(p);
-    case 'wfine': pk.add = clamp(round1(pk.add + (+ds.d)), 0, unit() === 'kg' ? 300 : 650); return updateWeightUI(p);
+    case 'w': pk.add = chipToAdd(p, +ds.v); return updateWeightUI(p);
+    case 'wfine': pk.add = clamp(round1(pk.add + (wMode(p).ps ? 2 : 1) * (+ds.d)), 0, unit() === 'kg' ? 300 : 650); return updateWeightUI(p);
+    case 'hs': { const h = hsVal(); pk.hs = !pk.hs; pk.add = clamp(round1(pk.add + (pk.hs ? h : -h)), 0, unit() === 'kg' ? 300 : 650); return updateWeightUI(p); }
     case 'base-fine': { // same path as the base picker: machine base changes; logged sets keep their stored base/total
       const ex = exById(curEx && curEx.exId); const m = machById(ex, ds.m);
       if (!m || noBase(m) || !baseUnlocked.has(m.id)) return;
       const nb = clamp(round1(baseOf(m) + (+ds.d)), 0, unit() === 'kg' ? 150 : 330);
       setMachineBase(ex, m, nb); persist(); render(); return toast(`Base ${fmtW(nb)} ${unit()} · logged sets keep their totals`);
     }
-    case 'wstep': { pk.add = stepChip(pk.add, weightChipList(p), +ds.d); return updateWeightUI(p); }
+    case 'wstep': { const wm = wMode(p), list = weightChipList(p);
+      pk.add = wm.ps ? round1(2 * stepChip(round1(pk.add / 2), list, +ds.d)) : round1(stepChip(round1(pk.add - wm.hs), list, +ds.d) + wm.hs); return updateWeightUI(p); }
     case 'rstep': pk.reps = clamp(pk.reps + (+ds.d), 1, 50); return updateRepsUI(p);
     case 'rset': pk.reps = +ds.v; updateRepsUI(p); el.remove(); return;
     case 'dset': pk.diff = +ds.v; return updateDiffUI(p);
@@ -2488,6 +2673,8 @@ document.addEventListener('click', async ev => {
     case 'wz-finish': S.setupDone = true; persist(); toast('Setup done — have a great workout!'); return go('#/today');
     // machine editor
     case 'me-gym': ME.gym = ds.v; return render();
+    case 'me-brand': ME.brand = ds.v; return render();
+    case 'me-ps': ME.perSide = ds.v === 'side'; return render();
     case 'me-gym-new': { const g = await askText('New gym tag', '', 'e.g. San Jose'); if (g) ME.gym = g; return render(); }
     case 'me-base': return meSetBase(ds.v === '' ? null : +ds.v);
     case 'me-bstep': return meSetBase(clamp(round1((ME.base || 0) + (+ds.d) * (unit() === 'kg' ? 2.5 : 5)), 0, 200));
@@ -2500,7 +2687,7 @@ document.addEventListener('click', async ev => {
     case 'me-del': {
       const ex = exById(ME.exId); const m = machById(ex, ME.key);
       if (S.sessions.some(s => s.entries.some(e => e.exId === ex.id && e.mId === m.id))) return toast('Has history — rename it instead');
-      if (!await confirmSheet('Delete machine?', `"${m.name}" will be removed.`)) return;
+      if (!await confirmSheet('Delete machine?', `"${mLabel(m)}" will be removed.`)) return;
       if (m.photoId) photoDel(m.photoId).catch(() => {}); ex.machines = ex.machines.filter(x => x !== m); persist(); ME = null; return go(meReturn || `#/set/e/${ex.id}`);
     }
     // templates & exercises
@@ -2554,8 +2741,10 @@ function saveMachine() {
   if (!name) return toast('Give the machine a short name');
   let m = !ME.isNew && machById(ex, ME.key);
   if (!m) { m = { id: uid() }; ex.machines.push(m); }
-  const renamed = !ME.isNew && m.name !== name;
-  Object.assign(m, { name, gym: (ME.gym || '').trim(), loc: (ME.loc || '').trim(), cues: (ME.cues || '').trim(), caution: (ME.caution || '').trim(), bu: m.bu || unit() });
+  const brand = (ME.brand || '').trim();
+  const renamed = !ME.isNew && (m.name !== name || (m.brand || '') !== brand);
+  if (ME.perSide != null && ex.kind !== 'cardio') m.perSide = !!ME.perSide;
+  Object.assign(m, { brand, name, gym: (ME.gym || '').trim(), loc: (ME.loc || '').trim(), cues: (ME.cues || '').trim(), caution: (ME.caution || '').trim(), bu: m.bu || unit() });
   if (m.base === undefined) m.base = null;
   setMachineBase(ex, m, ex.kind === 'cardio' ? 0 : ME.base);
   if (ME.origPhoto && ME.origPhoto !== ME.photoId) photoDel(ME.origPhoto).catch(() => {});
@@ -2567,7 +2756,7 @@ function saveMachine() {
   Object.keys(P).forEach(k => { if (P[k] && P[k].mId === m.id) delete P[k]; }); // re-derive drafts with the new base
   ME.origPhoto = ME.photoId; // saved: don't clean up
   if (renamed) markExDirty(ex.id);
-  persist(); const ret = meReturn || `#/set/e/${ex.id}`; ME = null; toast(`Saved ${name}`); go(ret);
+  persist(); const ret = meReturn || `#/set/e/${ex.id}`; ME = null; toast(`Saved ${mLabel(m)}`); go(ret);
 }
 document.addEventListener('input', ev => {
   const el = ev.target; const i = el.dataset && el.dataset.i; if (!i) return; const p = el.dataset.p; const pk = p && P[p];
@@ -2577,7 +2766,7 @@ document.addEventListener('input', ev => {
   else if (i === 'wrap-thoughts' && W) W.thoughts = el.value;
   else if (i === 'dur' || i === 'dist' || i === 'level') { pk[i] = +el.value; updateCardioUI(p); }
   else if (i === 'thoughts' && curEx) { const s = sesById(curEx.sid); s.thoughts = s.thoughts || {}; s.thoughts[curEx.exId] = el.value; persist(); markDirty(s.entries.filter(e => e.exId === curEx.exId).map(e => e.id)); }
-  else if (i === 'me-name' && ME) ME.name = el.value;
+  else if ((i === 'me-name' || i === 'me-brand') && ME) { ME[i === 'me-name' ? 'name' : 'brand'] = el.value; const lb = $('[data-testid=me-label] b'); if (lb) lb.textContent = mLabel({ brand: (ME.brand || '').trim(), name: (ME.name || '').trim() }) || '—'; }
   else if (i === 'me-loc' && ME) ME.loc = el.value;
   else if (i === 'me-cues' && ME) ME.cues = el.value;
   else if (i === 'me-caution' && ME) ME.caution = el.value;
@@ -2693,7 +2882,7 @@ function removeSJ2510() {
   const removed = [], kept = [];
   Object.values(S.exercises).forEach(ex => (ex.machines || []).slice().forEach(m => {
     if (!want.has(m.id)) return;
-    if (used.has(m.id)) { kept.push(m.name); return; }
+    if (used.has(m.id)) { kept.push(mLabel(m)); return; }
     ex.machines = ex.machines.filter(x => x !== m);
     Object.keys(P).forEach(k => { if (P[k] && P[k].mId === m.id) delete P[k]; });
     removed.push(m.name); S.sjRemoved = removed.length;
@@ -2705,6 +2894,39 @@ function removeSJ2510() {
     : n ? `Removed ${n} San Jose machine${pl(n)} with no logged sets — see Activity log` : `Kept San Jose machine${pl(kept.length)} with logged sets: ${kept.join(', ')}`;
   persist();
   return { removed, kept };
+}
+/* 2.6.0 one-time (flag S.migrated.brand260): split the brand off the front of catalog machine names, exactly as the 2.6.0 catalog
+   ships them ('Nautilus Leverage Incline Press' → brand 'Nautilus Leverage', name 'Incline Press'). Only machines whose name is still
+   one of the names the catalog ever published for that id: a machine Sri renamed on the phone, a phone-added machine, or one with a
+   brand already set is left exactly as it is. Ids never change, so every logged set stays attached. One Activity-log entry with the
+   before/after of each machine; "Restore this" there (or Undo on the one-time notice) puts the old names back. */
+const BRAND_SPLIT_260 = {"m-hoist-roc-it-chest-press":{"old":["HOIST ROC-IT Chest Press"],"brand":"HOIST","name":"ROC-IT Chest Press"},"m-nautilus-leverage-chest-press":{"old":["Nautilus Leverage Chest Press"],"brand":"Nautilus Leverage","name":"Chest Press"},"m-hammer-strength-select-chest-press":{"old":["Hammer Strength Select Chest Press"],"brand":"Hammer Strength","name":"Select Chest Press"},"m-nautilus-selectorized-chest-press-lakeway":{"old":["Nautilus Selectorized Chest Press (Lakeway)"],"brand":"Nautilus","name":"Selectorized Chest Press (Lakeway)"},"m-hammer-strength-iso-lateral-bench-press":{"old":["Hammer Strength Iso-Lateral Bench Press"],"brand":"Hammer Strength","name":"Iso-Lateral Bench Press"},"m-hammer-strength-select-incline-press":{"old":["Hammer Strength Select Incline Press"],"brand":"Hammer Strength","name":"Select Incline Press"},"m-hammer-strength-iso-lateral-incline-press":{"old":["Hammer Strength Iso-Lateral Incline Press"],"brand":"Hammer Strength","name":"Iso-Lateral Incline Press"},"m-nautilus-leverage-incline-press":{"old":["Nautilus Leverage Incline Press"],"brand":"Nautilus Leverage","name":"Incline Press"},"m-hammer-strength-iso-lateral-decline-press":{"old":["Hammer Strength Iso-Lateral Decline Press"],"brand":"Hammer Strength","name":"Iso-Lateral Decline Press"},"m-nautilus-impact-deltoid-fly-pec-fly":{"old":["Nautilus Impact Deltoid Fly / Pec Fly"],"brand":"Nautilus Impact","name":"Deltoid Fly / Pec Fly"},"m-matrix-triceps-press":{"old":["Matrix Triceps Press"],"brand":"Matrix","name":"Triceps Press"},"m-nautilus-impact-triceps-extension":{"old":["Nautilus Impact Triceps Extension"],"brand":"Nautilus Impact","name":"Triceps Extension"},"m-hoist-seated-dip":{"old":["HOIST Seated Dip"],"brand":"HOIST","name":"Seated Dip"},"m-hammer-strength-select-shoulder-press":{"old":["Hammer Strength Select Shoulder Press"],"brand":"Hammer Strength","name":"Select Shoulder Press"},"m-hoist-shoulder-press":{"old":["HOIST Shoulder Press"],"brand":"HOIST","name":"Shoulder Press"},"m-nautilus-impact-deltoid-raise":{"old":["Nautilus Impact Deltoid Raise"],"brand":"Nautilus Impact","name":"Deltoid Raise"},"m-hoist-lat-pulldown":{"old":["HOIST Lat Pulldown"],"brand":"HOIST","name":"Lat Pulldown"},"m-hammer-strength-iso-lateral-front-lat-pulldown":{"old":["Hammer Strength Iso-Lateral Front Lat Pulldown"],"brand":"Hammer Strength","name":"Iso-Lateral Front Lat Pulldown"},"m-hammer-strength-iso-lateral-low-row":{"old":["Hammer Strength Iso-Lateral Low Row"],"brand":"Hammer Strength","name":"Iso-Lateral Low Row"},"m-rear-delt-fly-nautilus-impact-deltoid-fly-pec-fly":{"old":["Nautilus Impact Deltoid Fly / Pec Fly"],"brand":"Nautilus Impact","name":"Deltoid Fly / Pec Fly"},"m-hoist-biceps-curl":{"old":["HOIST Biceps Curl"],"brand":"HOIST","name":"Biceps Curl"},"m-nautilus-hack-squat-lakeway":{"old":["Nautilus Hack Squat (Lakeway)"],"brand":"Nautilus","name":"Hack Squat (Lakeway)"},"m-nautilus-angled-leg-press":{"old":["Nautilus Angled Leg Press","Nautilus Leverage Angled Leg Press"],"brand":"Nautilus","name":"Angled Leg Press"},"m-hammer-strength-iso-lateral-leg-extension":{"old":["Hammer Strength Iso-Lateral Leg Extension"],"brand":"Hammer Strength","name":"Iso-Lateral Leg Extension"},"m-nautilus-inspiration-leg-extension":{"old":["Nautilus Inspiration Leg Extension"],"brand":"Nautilus Inspiration","name":"Leg Extension"},"m-nautilus-inspiration-seated-leg-curl":{"old":["Nautilus Inspiration Seated Leg Curl"],"brand":"Nautilus Inspiration","name":"Seated Leg Curl"},"m-nautilus-standing-calf-raise":{"old":["Nautilus Standing Calf Raise"],"brand":"Nautilus","name":"Standing Calf Raise"},"m-nautilus-tilt-seat-calf":{"old":["Nautilus Tilt Seat Calf"],"brand":"Nautilus","name":"Tilt Seat Calf"}};
+function brandSplit260() {
+  if (!S.migrated) S.migrated = {};
+  if (S.migrated.brand260) return 0;
+  const exs = new Set(); let n = 0, eg = '';
+  Object.values(S.exercises).forEach(ex => (ex.machines || []).forEach(m => {
+    const t = BRAND_SPLIT_260[m.id]; if (!t || m.brand) return;
+    // still a catalog name (any published spelling), or a 2.5.x app already took the 2.6.0 catalog's short name without its brand
+    const fromCat = t.old.includes(m.name) || (m.name === t.name && (!m.cat || m.cat.name === t.name));
+    if (!fromCat) return;
+    m.brand = t.brand; m.name = t.name; if (m.cat) { m.cat.name = t.name; m.cat.brand = t.brand; }
+    exs.add(ex.id); n++; if (!eg) eg = mLabel(m);
+  }));
+  S.migrated.brand260 = true;
+  if (n) { exs.forEach(markExDirty); jCtx = { action: 'brand-split', label: `Brand split from the name on ${n} machine${n === 1 ? '' : 's'} (e.g. ${eg})` }; S.brandNotice = n; }
+  persist();
+  return n;
+}
+/* Undo a brand split (Activity log "Restore this" / the notice's Undo): old name back, brand cleared. The catalog snapshot keeps the
+   split values, so a later catalog update sees the old name as Sri's choice and leaves it alone. */
+function undoBrandSplit(entry) {
+  let n = 0; const exs = new Set();
+  entry.changes.filter(c => c.k.startsWith('machine:') && c.type === 'mod' && c.before && c.after && c.before.name !== c.after.name).forEach(c => {
+    const ex = exById(c.after.exId); const m = machById(ex, c.after.id); if (!m || m.name !== c.after.name || (m.brand || '') !== (c.after.brand || '')) return;
+    m.cat = Object.assign({}, m.cat || {}, catSnap(c.after, CAT_MF)); m.name = c.before.name; m.brand = c.before.brand || ''; n++; exs.add(ex.id); });
+  exs.forEach(markExDirty);
+  return n;
 }
 (async function boot() {
   S = await loadState();
@@ -2721,15 +2943,20 @@ function removeSJ2510() {
   } else persist(); // same version: logs only if migrate() changed something
   try { repairHidden258(); } catch (e) { console.warn('repair failed', e); }
   try { removeSJ2510(); } catch (e) { console.warn('San Jose clean-up failed', e); }
+  try { brandSplit260(); } catch (e) { console.warn('brand split failed', e); }
   // Auto-apply published catalog before first paint when possible (first-run setup + updates).
   await checkCatalogUpdate();
   persist();
   render(); registerSW();
-  if (S.repairNotice) { const n = S.repairNotice; // one time: cleared once it has been on screen for 3 s
-    toast(`Found and restored ${n} hidden set${n === 1 ? '' : 's'} — see Activity log`, null, 8000);
-    setTimeout(() => { delete S.repairNotice; persist(); }, 3000); }
-  if (S.sjNotice) { const msg = S.sjNotice; // one time, after the repair notice if both are due
-    setTimeout(() => { toast(msg, null, 9000); setTimeout(() => { delete S.sjNotice; persist(); }, 3000); }, S.repairNotice ? 8500 : 0); }
+  // one-time notices, one after another; each is cleared once it has been on screen for 3 s
+  const notices = [];
+  if (S.repairNotice) { const n = S.repairNotice; notices.push({ key: 'repairNotice', msg: `Found and restored ${n} hidden set${n === 1 ? '' : 's'} — see Activity log`, ms: 8000 }); }
+  if (S.sjNotice) notices.push({ key: 'sjNotice', msg: S.sjNotice, ms: 9000 });
+  if (S.brandNotice) { const n = S.brandNotice; const je = J.slice().reverse().find(e => e.action === 'brand-split');
+    notices.push({ key: 'brandNotice', msg: `Brand now separate from the name on ${n} machine${n === 1 ? '' : 's'} — history unchanged`, ms: 9000,
+      undo: je ? () => { jRestore(je.id); } : null }); }
+  if (!S.reattachSeen || S.reattachSeen !== reattachKey()) { const n = reattachSuggestions().length; if (n) notices.push({ key: null, msg: `${n} possible history fix${n === 1 ? '' : 'es'} — Setup › Re-attach history`, ms: 7000, after: () => { S.reattachSeen = reattachKey(); persist(); } }); }
+  notices.reduce((at, x) => { setTimeout(() => { toast(x.msg, x.undo || null, x.ms); setTimeout(() => { if (x.key) delete S[x.key]; if (x.after) x.after(); persist(); }, 3000); }, at); return at + x.ms + 500; }, 0);
   if (navigator.storage && navigator.storage.persist) navigator.storage.persisted().then(p => p || navigator.storage.persist()).catch(() => {});
   scheduleSync(1500);
   window.__liftlog = { state: () => S, persist, syncNow, version: APP_VERSION, buildCSV, journal: () => J, jRestore, jPrune, jMirror, buildExport, wake: () => ({ wanted: wakeWanted, held: !!wakeSentinel }),
