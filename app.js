@@ -1,7 +1,7 @@
 /* Lift Log — tap-only workout logger PWA. Plain JS, no build step, no dependencies. */
 'use strict';
 (function () {
-const APP_VERSION = '2.5.9';
+const APP_VERSION = '2.5.10';
 const LB_PER_KG = 2.20462;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -245,7 +245,8 @@ function jMergeEntries(list) { // from a backup file: append entries we don't ha
 function stateRichness(s) {
   if (!s) return -1;
   const entries = (s.sessions || []).reduce((n, x) => n + (x.entries || []).length, 0);
-  const machines = Object.values(s.exercises || {}).reduce((n, e) => n + ((e.machines || []).length), 0);
+  // 2.5.10: machines removed on purpose by the San Jose clean-up still count, so the copy saved after the clean-up is not mistaken for a poorer one
+  const machines = Object.values(s.exercises || {}).reduce((n, e) => n + ((e.machines || []).length), 0) + (+s.sjRemoved || 0);
   const sessions = (s.sessions || []).length;
   // Lexicographic: entries matter most, then phone machines, then session shells.
   return entries * 1e9 + machines * 1e3 + sessions;
@@ -816,26 +817,40 @@ function cloneMachine(m) {
   if (Array.isArray(m.weightChips) && m.weightChips.length) { out.weightChips = m.weightChips.slice(); out.chipBu = m.chipBu || 'lb'; }
   return out;
 }
-function applyCatalogFields(phoneM, fileM, ex) {
-  phoneM.name = fileM.name;
-  phoneM.gym = fileM.gym || '';
-  phoneM.loc = fileM.loc || '';
-  phoneM.cues = fileM.cues || '';
-  phoneM.caution = fileM.caution || '';
-  if (fileM.photoId) phoneM.photoId = fileM.photoId;
+/* 2.5.10: a catalog update never overwrites what Sri changed on the phone. Each catalog machine / exercise keeps `cat`, the catalog
+   values it last received. A field counts as edited on the phone when it differs from that snapshot; phones from before 2.5.10 have
+   no snapshot yet, so a field counts as edited when it matches neither the incoming value nor any value the catalog ever shipped
+   for it (catalog.json fieldHistory). Edited fields are kept; everything else follows the catalog as before. Ids never change. */
+const CAT_MF = ['name', 'gym', 'loc', 'cues', 'caution', 'base'], CAT_EF = ['name', 'cues', 'pinned'];
+const catNorm = (f, v) => f === 'base' ? ((v === null || v === '' || v === undefined) ? null : +v) : String(v == null ? '' : v);
+const catSnap = (o, fields) => { const r = {}; fields.forEach(f => { r[f] = catNorm(f, o[f]); }); return r; };
+function catEdited(phone, f, fileV, hist) {
+  const v = catNorm(f, phone[f]);
+  if (v === fileV) return false;
+  if (phone.cat && f in phone.cat) return v !== phone.cat[f];
+  return !((hist && hist[f]) || []).some(h => catNorm(f, h) === v);
+}
+function applyCatalogFields(phoneM, fileM, ex, hist) {
+  const fv = catSnap(fileM, CAT_MF); let kept = 0;
+  ['name', 'gym', 'loc', 'cues', 'caution'].forEach(f => { if (catEdited(phoneM, f, fv[f], hist)) kept++; else phoneM[f] = fv[f]; });
+  if (fileM.photoId && (!phoneM.photoId || /^photo-[0-9a-f]{8}$/.test(phoneM.photoId))) phoneM.photoId = fileM.photoId; // a photo taken on the phone stays
   if (Array.isArray(fileM.weightChips) && fileM.weightChips.length) {
     phoneM.weightChips = fileM.weightChips.slice();
     phoneM.chipBu = fileM.chipBu || 'lb';
   }
-  // BASE RULE: file "not set" (null) keeps the phone value; a number from the file wins.
-  const fileBase = (fileM.base === null || fileM.base === '') ? null : +fileM.base;
-  if (fileBase === null || Number.isNaN(fileBase)) return; // keep phone base
+  const base0 = phoneM.cat ? phoneM.cat.base : undefined;
+  phoneM.cat = fv;
+  // BASE RULE: file "not set" (null) keeps the phone value; a number from the file wins unless the base was set on the phone.
+  const fileBase = fv.base;
+  if (fileBase === null || Number.isNaN(fileBase)) return kept; // keep phone base
+  if (catEdited(Object.assign({}, phoneM, { cat: base0 === undefined ? undefined : { base: base0 } }), 'base', fileBase, hist)) return kept + 1;
   // 2.5.9: a base from the catalog never rewrites logged sets: they keep their saved add / base / total, even sets logged while
   // the base was not set (e.g. Upper-Back Row → 12 lb). Only entering the base on the phone fills those in (setMachineBase).
   phoneM.base = fileBase; phoneM.bu = fileM.bu || phoneM.bu || 'lb';
   Object.keys(P).forEach(k => { if (P[k] && P[k].mId === phoneM.id && P[k].base !== undefined) { P[k].base = baseOf(phoneM); P[k].noBase = noBase(phoneM); } });
+  return kept;
 }
-function mergeCatalog(fileState) {
+function mergeCatalog(fileState, fieldHistory) {
   // HARD GUARANTEE: catalog merge never clears workouts / sync / settings.
   const keepSessions = S.sessions;
   const keepAdvice = S.advice;
@@ -843,15 +858,16 @@ function mergeCatalog(fileState) {
   const keepSettings = S.settings;
   const keepLastExport = S.lastExport;
   const incoming = migrate(JSON.parse(JSON.stringify(fileState))); // normalize bases/cautions without touching phone S yet
-  let addedEx = 0, addedM = 0, updatedM = 0;
+  let addedEx = 0, addedM = 0, updatedM = 0, keptEdits = 0; const hist = fieldHistory || {};
+  const gone = id => !!(S.migrated && S.migrated.sj2510) && SJ_REMOVE_2510.includes(id); // 2.5.10: never bring a removed San Jose machine back
   const exIdMap = {}; // file exercise id -> phone exercise id
   Object.values(incoming.exercises || {}).forEach(fileEx => {
     let phoneEx = findExByIncoming(S.exercises, fileEx);
     if (!phoneEx) {
       phoneEx = {
         id: fileEx.id, name: fileEx.name, kind: fileEx.kind || 'strength',
-        machines: (fileEx.machines || []).map(cloneMachine),
-        pinned: fileEx.pinned || '', cues: fileEx.cues || ''
+        machines: (fileEx.machines || []).filter(m => !gone(m.id)).map(m => Object.assign(cloneMachine(m), { cat: catSnap(m, CAT_MF) })),
+        pinned: fileEx.pinned || '', cues: fileEx.cues || '', cat: catSnap(fileEx, CAT_EF)
       };
       S.exercises[phoneEx.id] = phoneEx;
       addedEx++; addedM += phoneEx.machines.length;
@@ -860,18 +876,20 @@ function mergeCatalog(fileState) {
     }
     exIdMap[fileEx.id] = phoneEx.id;
     // update exercise catalog fields (name/cues/pinned) but never wipe a phone pinned caution with empty
-    phoneEx.name = fileEx.name || phoneEx.name;
+    // (name / cues / pinned: an empty file value never wipes the phone; a phone edit is never overwritten, see catEdited)
+    const fe = catSnap(fileEx, CAT_EF), eh = hist['ex:' + fileEx.id];
+    CAT_EF.forEach(f => { if (!fe[f]) return; if (catEdited(phoneEx, f, fe[f], eh)) keptEdits++; else phoneEx[f] = fe[f]; });
+    phoneEx.cat = fe;
     if (fileEx.kind) phoneEx.kind = fileEx.kind;
-    if (fileEx.cues) phoneEx.cues = fileEx.cues;
-    if (fileEx.pinned) phoneEx.pinned = fileEx.pinned;
     (fileEx.machines || []).forEach(fileM => {
       const phoneM = findMachByIncoming(phoneEx.machines, fileM);
       if (!phoneM) {
-        phoneEx.machines.push(cloneMachine(fileM));
+        if (gone(fileM.id)) return;
+        phoneEx.machines.push(Object.assign(cloneMachine(fileM), { cat: catSnap(fileM, CAT_MF) }));
         addedM++;
         return;
       }
-      applyCatalogFields(phoneM, fileM, phoneEx);
+      keptEdits += applyCatalogFields(phoneM, fileM, phoneEx, hist[fileM.id]);
       updatedM++;
     });
   });
@@ -896,7 +914,7 @@ function mergeCatalog(fileState) {
   S.sync = keepSync;
   S.settings = keepSettings;
   S.lastExport = keepLastExport;
-  return { addedEx, addedM, updatedM };
+  return { addedEx, addedM, updatedM, keptEdits };
 }
 function importModeSheet(obj) {
   const st = obj.state || {};
@@ -931,7 +949,7 @@ async function importJSON(file) {
   await saveImportSnapshot(mode === 'merge' ? 'before update machines' : 'before full restore');
   if (mode === 'merge') {
     await applyPhotos(obj.photos || {}, false);
-    const r = mergeCatalog(obj.state);
+    const r = mergeCatalog(obj.state, obj.fieldHistory);
     if (obj.catalogVersion) S.lastAppliedCatalogVersion = +obj.catalogVersion;
     jMergeEntries(obj.journal);
     jCtx = { action: 'import', label: `Import · update machines (+${r.addedM} new, ${r.updatedM} updated)` };
@@ -1013,7 +1031,7 @@ async function applyPublishedCatalog(obj, { reason } = {}) {
   const keptAdvice = S.advice;
   const sessionCount = S.sessions.length;
   const entryCount = S.sessions.reduce((n, s) => n + (s.entries || []).length, 0);
-  const r = mergeCatalog(obj.state);
+  const r = mergeCatalog(obj.state, obj.fieldHistory);
   // Belt-and-suspenders: never allow a catalog apply to leave fewer workouts than before.
   if (S.sessions.length < sessionCount || S.sessions.reduce((n, s) => n + (s.entries || []).length, 0) < entryCount) {
     console.error('catalog merge tried to drop sessions — restored pre-merge workouts');
@@ -1022,7 +1040,7 @@ async function applyPublishedCatalog(obj, { reason } = {}) {
   }
   S.lastAppliedCatalogVersion = ver;
   S.setupDone = true;
-  jCtx = { action: 'catalog-merge', label: `Catalog update · ${r.addedEx} new exercise${r.addedEx === 1 ? '' : 's'}, ${r.addedM} new machine${r.addedM === 1 ? '' : 's'}, ${r.updatedM} checked` };
+  jCtx = { action: 'catalog-merge', label: `Catalog update · ${r.addedEx} new exercise${r.addedEx === 1 ? '' : 's'}, ${r.addedM} new machine${r.addedM === 1 ? '' : 's'}, ${r.updatedM} checked${r.keptEdits ? `, ${r.keptEdits} phone edit${r.keptEdits === 1 ? '' : 's'} kept` : ''}` };
   persist(); await refreshSnapCount();
   return r;
 }
@@ -2081,7 +2099,7 @@ function viewExHistory(sid, exId) {
 }
 /* ---------------- View: Settings ---------------- */
 /* ---------------- View: Activity log (2.5.7) ---------------- */
-const J_RESTORABLE = new Set(['set-delete', 'session-delete', 'move-date', 'move-machine']);
+const J_RESTORABLE = new Set(['set-delete', 'session-delete', 'move-date', 'move-machine', 'machine-remove']);
 let jShow = 150;
 function viewJournal(day) {
   const dayOf = e => ymd(new Date(e.ts));
@@ -2095,7 +2113,7 @@ function viewJournal(day) {
   let lastDay = null;
   const rows = list.slice(0, jShow).map(e => {
     const d = dayOf(e); const head = !day && d !== lastDay ? `<h3 class="jhead">${esc(dayWord(d))}${d === todayStr() || d === daysAgo(1) ? ' · ' + esc(fmtD(d)) : ''}</h3>` : ''; lastDay = d;
-    const can = J_RESTORABLE.has(e.action) && e.changes.some(c => c.before && (c.k.startsWith('entry:') || c.k.startsWith('session:')));
+    const can = J_RESTORABLE.has(e.action) && e.changes.some(c => c.before && (c.k.startsWith('entry:') || c.k.startsWith('session:') || (c.type === 'del' && c.k.startsWith('machine:'))));
     return `${head}<div class="jrow" data-testid="jrow" data-id="${e.id}" data-action="${esc(e.action)}">
       <div class="jt"><b>${esc(tm(e.ts))}</b> · ${esc(e.label)}</div>
       <div class="row jmeta"><span class="sub grow">${esc(e.action)} · ${e.changes.length} record${e.changes.length === 1 ? '' : 's'}${restored.has(e.id) ? ' · restored ✓' : ''}</span>
@@ -2111,7 +2129,11 @@ function viewJournal(day) {
 /* "Restore this": put deleted / moved records back exactly as they were before that entry (sets, their session). Logged itself. */
 function jRestore(id) {
   const e = J.find(x => x.id === id); if (!e) return toast('Entry not found');
-  const touched = new Set(), ids = [];
+  const touched = new Set(), ids = [], machs = [];
+  // machines this entry removed (2.5.10 San Jose clean-up) come back exactly as they were, same id, if their exercise is still there
+  e.changes.filter(c => c.k.startsWith('machine:') && c.type === 'del' && c.before).forEach(c => {
+    const b = JSON.parse(JSON.stringify(c.before)); const ex = exById(b.exId); delete b.exId;
+    if (ex && !machById(ex, b.id)) { ex.machines.push(b); machs.push(b.name); } });
   const isPrimary = c => c.type === 'del' || (c.type === 'mod' && (c.before.sid !== c.after.sid || c.before.mId !== c.after.mId || c.before.date !== c.after.date));
   // sessions that this entry deleted come back first (wrap-up, notes, exercise list as they were)
   e.changes.filter(c => c.k.startsWith('session:') && c.before && !sesById(c.before.id) && c.type === 'del').forEach(c => { const x = JSON.parse(JSON.stringify(c.before)); x.entries = []; S.sessions.push(x); });
@@ -2122,6 +2144,8 @@ function jRestore(id) {
     if (!home) { const t = tplById(tid); home = { id: sid, date, tid, mode: 'solo', repeatFrom: null, exIds: t ? t.exIds.slice() : [], entries: [], thoughts: {}, created: Date.now() }; S.sessions.push(home); }
     home.entries.push(b); if (!home.exIds.includes(b.exId)) home.exIds.push(b.exId); touched.add(home); ids.push(b.id);
   });
+  if (!ids.length && machs.length) { jCtx = { action: 'restore', label: 'Restored · ' + e.label, ref: e.id }; persist(); render();
+    return toast(machs.length === 1 ? `Restored machine ${machs[0]}` : `Restored ${machs.length} machines`); }
   if (!ids.length) return toast('Nothing to restore');
   const fx = []; touched.forEach(q => { if (!q.entries.some(x => ids.includes(x.id))) renumberSets(q, [...new Set(ids.map(i => (e.changes.find(c => c.k === 'entry:' + i) || {}).before).filter(Boolean).map(b => b.exId))]); fx.push(...fixSetCollisions(q)); });
   // a session this entry created (e.g. the move's target day) goes away only if nothing is left in it
@@ -2652,6 +2676,36 @@ function repairHidden258() {
   S.migrated.repair258 = true; if (hidden) S.repairNotice = hidden; persist(); // notice survives a relaunch until it has been on screen
   return hidden;
 }
+/* 2.5.10 one-time (flag S.migrated.sj2510). Sri: "I don't want those San Jose machines." Removes these exact catalog ids ONLY when nothing
+   was ever logged on them: no set / cardio entry in any session (hidden duplicate set numbers included) and no entry record in the
+   Activity log (deleted or moved sets that "Restore this" could bring back). Each removal is its own Activity-log entry holding the
+   full machine record (action machine-remove, "Restore this" puts it back with the same id). Machines with history are kept and named
+   once in a one-line notice. The catalog no longer ships these ids and mergeCatalog never re-adds them. */
+const SJ_REMOVE_2510 = ['m-selectorized-chest-press-san-jose', 'm-incline-press-san-jose', 'm-nautilus-shoulder-press-san-jose', 'm-plate-loaded-hack-squat-san-jose',
+  'm-matrix-leg-extension-san-jose', 'm-star-trac-triceps-extension', 'm-star-trac-rear-delt-fly-reverse-pec-deck', 'm-star-trac-biceps-curl',
+  'm-star-trac-angled-leg-press', 'm-star-trac-standing-calf-raise'];
+function removeSJ2510() {
+  if (!S.migrated) S.migrated = {};
+  if (S.migrated.sj2510) return null;
+  const want = new Set(SJ_REMOVE_2510), used = new Set();
+  S.sessions.forEach(x => (x.entries || []).forEach(e => { if (want.has(e.mId)) used.add(e.mId); }));
+  J.forEach(j => (j.changes || []).forEach(c => { if (c.k && c.k.startsWith('entry:')) [c.before, c.after].forEach(r => { if (r && want.has(r.mId)) used.add(r.mId); }); }));
+  const removed = [], kept = [];
+  Object.values(S.exercises).forEach(ex => (ex.machines || []).slice().forEach(m => {
+    if (!want.has(m.id)) return;
+    if (used.has(m.id)) { kept.push(m.name); return; }
+    ex.machines = ex.machines.filter(x => x !== m);
+    Object.keys(P).forEach(k => { if (P[k] && P[k].mId === m.id) delete P[k]; });
+    removed.push(m.name); S.sjRemoved = removed.length;
+    jCtx = { action: 'machine-remove', label: `Removed ${m.name} from ${ex.name} · San Jose, no logged sets` }; persist();
+  }));
+  S.migrated.sj2510 = true;
+  const n = removed.length, pl = k => k === 1 ? '' : 's';
+  if (n || kept.length) S.sjNotice = n && kept.length ? `Removed ${n} San Jose machine${pl(n)} · kept ${kept.length} with logged sets: ${kept.join(', ')}`
+    : n ? `Removed ${n} San Jose machine${pl(n)} with no logged sets — see Activity log` : `Kept San Jose machine${pl(kept.length)} with logged sets: ${kept.join(', ')}`;
+  persist();
+  return { removed, kept };
+}
 (async function boot() {
   S = await loadState();
   S.sessions.forEach(s => s.entries.forEach(e => { if (e.ts > lastTs) lastTs = e.ts; }));
@@ -2666,6 +2720,7 @@ function repairHidden258() {
     persist();
   } else persist(); // same version: logs only if migrate() changed something
   try { repairHidden258(); } catch (e) { console.warn('repair failed', e); }
+  try { removeSJ2510(); } catch (e) { console.warn('San Jose clean-up failed', e); }
   // Auto-apply published catalog before first paint when possible (first-run setup + updates).
   await checkCatalogUpdate();
   persist();
@@ -2673,6 +2728,8 @@ function repairHidden258() {
   if (S.repairNotice) { const n = S.repairNotice; // one time: cleared once it has been on screen for 3 s
     toast(`Found and restored ${n} hidden set${n === 1 ? '' : 's'} — see Activity log`, null, 8000);
     setTimeout(() => { delete S.repairNotice; persist(); }, 3000); }
+  if (S.sjNotice) { const msg = S.sjNotice; // one time, after the repair notice if both are due
+    setTimeout(() => { toast(msg, null, 9000); setTimeout(() => { delete S.sjNotice; persist(); }, 3000); }, S.repairNotice ? 8500 : 0); }
   if (navigator.storage && navigator.storage.persist) navigator.storage.persisted().then(p => p || navigator.storage.persist()).catch(() => {});
   scheduleSync(1500);
   window.__liftlog = { state: () => S, persist, syncNow, version: APP_VERSION, buildCSV, journal: () => J, jRestore, jPrune, jMirror, buildExport, wake: () => ({ wanted: wakeWanted, held: !!wakeSentinel }),
