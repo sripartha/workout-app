@@ -1,7 +1,7 @@
 /* Lift Log — tap-only workout logger PWA. Plain JS, no build step, no dependencies. */
 'use strict';
 (function () {
-const APP_VERSION = '2.6.0';
+const APP_VERSION = '2.6.1';
 const LB_PER_KG = 2.20462;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -376,7 +376,7 @@ const fmtTotal = v => v === 0 ? 'BW' : `${round1(v)} ${unit()}`;
 const snap = v => { const st = step(); return Math.max(0, round1(Math.round(v / st) * st)); };
 function machineForDraft(p) {
   const d = P[p]; if (!d || !d.mId) return null;
-  if (p === 'me' && typeof ME !== 'undefined' && ME) return { id: ME.key, weightChips: ME.weightChips, chipBu: ME.chipBu || 'lb', name: ME.name, brand: ME.brand, perSide: meSide() };
+  if (p === 'me' && typeof ME !== 'undefined' && ME) return { id: ME.key, weightChips: ME.weightChips, chipBu: ME.chipBu || 'lb', name: ME.name, brand: ME.brand, perSide: meSide(), arms: !!ME.arms };
   if (p === 'ed' && d.sid) { const s = sesById(d.sid); const e = s && s.entries.find(x => x.id === d.id); if (e) return machById(exById(e.exId), d.mId); }
   if (curEx) return machById(exById(curEx.exId), d.mId);
   // entry editor: draft key ed — machine from open sheet context not always available
@@ -389,9 +389,23 @@ function machineForDraft(p) {
 const HS_LB = 5;
 const hasChips = m => !!m && Array.isArray(m.weightChips) && m.weightChips.length > 0;
 const perSideAuto = m => /iso-lateral|plate[- ]?loaded|leverage/i.test(mFull(m));
-const perSideOf = m => !!m && !hasChips(m) && (m.perSide != null ? !!m.perSide : perSideAuto(m));
+/* 2.6.1 (Sri): 'arms work separately' machines (Iso-Lateral: each arm moves its own lever). Entry is plates per arm (stored add = 2 × plates,
+   as in 2.6.0), the base is PER ARM, and the headline is the weight one arm moves: plates + base, e.g. 32.5 + 12 = 44.5 lb / arm. Never a
+   doubled total. Stored sets are never rewritten; this is display + export only. Shared-load plate machines keep 'X/side · total Y'. */
+const armsOf = m => !!m && !hasChips(m) && m.arms === true;
+const perSideOf = m => !!m && !hasChips(m) && (armsOf(m) || (m.perSide != null ? !!m.perSide : perSideAuto(m)));
+/* 2.6.1: on per-side machines every logged weight shows both numbers, per side and total ("35/side · 82 total"). */
+const entMach = e => e && machById(exById(e.exId), e.mId);
+const psParts = e => { const m = entMach(e); if (!e || e.kind !== 'set' || e.add == null || !perSideOf(m)) return null;
+  const side = round1(conv(e.add, e.u || 'lb', unit()) / 2), base = e.base === null ? null : round1(conv(e.base || 0, e.u || 'lb', unit()));
+  return { arms: armsOf(m), side, base, arm: base === null ? null : round1(side + base), tot: e.base === null ? null : dispW(e) }; };
+const armTxt = (side, base, long) => base === null ? `${fmtW(side)}${long ? ' plates' : ''}/arm + base?` : `${fmtW(round1(side + base))}/arm${long && base ? ` (${fmtW(side)} + ${fmtW(base)} base)` : ''}`;
+const psLong = e => { const q = psParts(e); return q && (q.arms ? armTxt(q.side, q.base, true) : `${fmtW(q.side)}/side · ${q.tot === null ? 'base?' : fmtW(q.tot) + ' total'}`); };
+const psShort = e => { const q = psParts(e); return q && (q.arms ? armTxt(q.side, q.base, false) : `${fmtW(q.side)}/side · ${q.tot === null ? '?' : fmtW(q.tot)}`); };
+const wChip = e => psShort(e) || fmtW(dispW(e)); // set chips / set bar
+const wLong = e => { const q = psParts(e); if (q && q.arms) return q.arm === null ? `${fmtW(q.side)} ${unit()} plates / arm + base?` : `${fmtW(q.arm)} ${unit()} / arm`; return psLong(e) || fmtTotal(dispW(e)); }; // headline
 const hsVal = () => round1(conv(HS_LB, 'lb', unit()));
-const wMode = p => { const m = machineForDraft(p); const d = P[p] || {}; return { ps: perSideOf(m), hs: hasChips(m) && d.hs ? hsVal() : 0, cable: hasChips(m) }; };
+const wMode = p => { const m = machineForDraft(p); const d = P[p] || {}; return { ps: perSideOf(m), arms: armsOf(m), hs: hasChips(m) && d.hs ? hsVal() : 0, cable: hasChips(m) }; };
 const chipOn = (p, xv) => { const w = wMode(p), v = P[p].add; return Math.abs((w.ps ? 2 * xv : xv + w.hs) - v) < 1e-6; };
 const chipToAdd = (p, xv) => { const w = wMode(p); return round1(w.ps ? 2 * xv : xv + w.hs); };
 // a logged cable weight that is a stack chip + 5 → the horseshoe was on
@@ -460,11 +474,22 @@ function lastFor(exId, mId, exclude, upto) {
   return null;
 }
 const lastEnt = l => l && l.ents[l.ents.length - 1];
-/* Machine used most recently for this exercise (any session), else the most recently set-up starting weight. */
+/* Machine Sri last worked on for this exercise: the latest day (session date, then session order) with sets on a machine that still
+   exists; on that day the machine with the most sets wins, ties go to the later set (2.6.1: a stray extra set on another machine
+   at the end, e.g. Oct 12's single 0 lb bench set after two Selectorized sets, no longer hijacks "Last machine used").
+   Else the most recently set-up starting weight. */
+function lastDayMachines(ex, upto) {
+  for (const s of sortedSessions()) {
+    if (upto && s.date > upto) continue;
+    const by = {}; s.entries.forEach(e => { if (e.exId === ex.id && machById(ex, e.mId)) { const b = by[e.mId] = by[e.mId] || { mId: e.mId, n: 0, ts: -Infinity }; b.n++; b.ts = Math.max(b.ts, e.ts || 0); } });
+    const list = Object.values(by).sort((a, b) => b.n - a.n || b.ts - a.ts);
+    if (list.length) return { ses: s, list };
+  }
+  return null;
+}
 function recentMachine(ex, upto) {
-  let best = null;
-  S.sessions.forEach(s => (upto && s.date > upto) ? null : s.entries.forEach(e => { if (e.exId === ex.id && machById(ex, e.mId)) { const k = s.date + '|' + String(e.ts).padStart(15, '0'); if (!best || k > best.k) best = { k, mId: e.mId }; } }));
-  if (best) return machById(ex, best.mId);
+  const d = lastDayMachines(ex, upto);
+  if (d) return machById(ex, d.list[0].mId);
   const seeded = ex.machines.filter(m => m.start).sort((a, b) => (b.start.ts || 0) - (a.start.ts || 0));
   return seeded[0] || null;
 }
@@ -479,7 +504,7 @@ function todaySetsHTML(ses, ex) {
     <div class="row"><span class="sub mach-label grow">${esc(dayWord(ses.date))} · ${sets.length} set${sets.length === 1 ? '' : 's'}</span>
       <span class="fine">tap to edit</span><button class="linkbtn fine mvall" data-a="move-all" data-sid="${ses.id}" data-ex="${ex.id}" data-testid="move-all">⇄ Move all</button></div>
     ${groups.map(g => `<div class="ts-chips">${multi ? `<span class="ts-gm">${esc(machName(ex.id, g.mId))}</span>` : ''}${g.sets.map(e => `<button class="tschip today-set" data-a="edit-entry" data-sid="${ses.id}" data-id="${e.id}" data-testid="today-set" aria-label="Set ${e.set}, ${fmtW(dispW(e))} by ${e.reps}, ${esc(machName(ex.id, e.mId))}">
-      <b>S${e.set}</b>${fmtW(dispW(e))}×${e.reps}</button>`).join('')}</div>`).join('')}
+      <b>S${e.set}</b>${wChip(e)}×${e.reps}</button>`).join('')}</div>`).join('')}
   </div>`;
 }
 function todaySetsSiblings(ses, exId) {
@@ -493,18 +518,18 @@ function pastBanner(date) {
 function compactSets(ents) {
   const out = [];
   ents.forEach(e => {
-    const k = `${fmtW(dispW(e))}×${e.reps || '?'}`;
+    const q0 = psParts(e); const ps = q0 && q0.arms ? psShort(e) : psLong(e); const k = ps ? `${ps} × ${e.reps || '?'}` : `${fmtW(dispW(e))}×${e.reps || '?'}`;
     const last = out[out.length - 1];
-    if (last && last.k === k) last.n++; else out.push({ k, n: 1 });
+    if (last && last.k === k) last.n++; else out.push({ k, n: 1, ps: !!ps });
   });
-  return out.map(o => o.n > 1 ? `${o.k} ×${o.n}` : o.k).join(', ');
+  return out.map(o => o.n > 1 ? (o.ps ? `${o.k} (${o.n} sets)` : `${o.k} ×${o.n}`) : o.k).join(', ');
 }
 const cardioSummary = e => `${e.dur} min${e.dist ? ` · ${round1(e.dist)} ${e.du || S.settings.distUnit}` : ''}${e.level ? ` · L${e.level}` : ''}`;
 const diffTxt = d => d ? `difficulty ${d} (${DIFF_SHORT[d]})` : '';
 function lastLine(l, withDate = true) {
   const e = lastEnt(l); if (!e) return '';
   if (e.kind === 'cardio') return `${cardioSummary(e)}${e.diff ? ' · d' + e.diff : ''}${withDate ? ' · ' + fmtD(l.date) : ''}`;
-  return `${fmtTotal(dispW(e))}${e.base === null ? ' + base?' : ''}${e.reps ? ' × ' + e.reps : ''}${e.diff ? ' · d' + e.diff : ''}${withDate ? ' · ' + fmtD(l.date) : ''}${l.seed ? ' · starting weight' : ''}`;
+  return `${psLong(e) || fmtTotal(dispW(e)) + (e.base === null ? ' + base?' : '')}${e.reps ? ' × ' + e.reps : ''}${e.diff ? ' · d' + e.diff : ''}${withDate ? ' · ' + fmtD(l.date) : ''}${l.seed ? ' · starting weight' : ''}`;
 }
 
 /* ---------------- Routing ---------------- */
@@ -514,6 +539,7 @@ window.addEventListener('hashchange', () => { closeSheet(); guardSeen = null; re
 
 /* ---------------- UI primitives (pickers keep their state in P[prefix]) ---------------- */
 const P = {};
+const RESEL = {}; // 2.6.1: draft key -> machine to re-select after its draft was dropped (machine edited)
 function seg(action, options, cur, extra = '') {
   return `<div class="seg">${options.map(([v, l]) => `<button data-a="${action}" data-v="${esc(v)}" ${extra} class="${String(v) === String(cur) ? 'on' : ''}">${esc(l)}</button>`).join('')}</div>`;
 }
@@ -532,7 +558,7 @@ function baseLineHTML(p) {
       <span class="fdots">${fineDots('base-fine', null, 1, d.mId)}</span>
       <button class="chip sm baselock" data-a="lock-base" data-m="${d.mId}" data-testid="lock-base" aria-label="Lock base">🔒 Lock</button></div>`;
   }
-  return `<div class="baseline base-locked" data-testid="base-line"><span class="bquiet">🔒 Base ${fmtW(d.base)} ${unit()}</span>
+  return `<div class="baseline base-locked" data-testid="base-line"><span class="bquiet">🔒 Base ${fmtW(d.base)} ${unit()}${wMode(p).arms ? ' / arm' : ''}</span>
     <button class="chip sm baselock" data-a="unlock-base" data-m="${d.mId}" data-testid="unlock-base" aria-label="Unlock base to edit">Unlock</button></div>`;
 }
 function weightPicker(p, compact = false) {
@@ -543,7 +569,7 @@ function weightPicker(p, compact = false) {
   const cls = compact ? ' wp-compact' : '';
   const showBase = p !== 'ed'; // entry sheet stays short — base lives on the log screen
   return `<div class="wpick${cls}">${showBase ? baseLineHTML(p) : ''}
-  <div class="wlabel" data-testid="working-label">Working <span class="bquiet">${custom ? '(cable stack)' : wm.ps ? '(plates per side)' : /dumbbell/i.test((machineForDraft(p) || {}).name || '') ? '(per dumbbell)' : '(plates / pin)'}</span>${hsBtn}</div>
+  <div class="wlabel" data-testid="working-label">Working <span class="bquiet">${custom ? '(cable stack)' : wm.arms ? '(plates per arm)' : wm.ps ? '(plates per side)' : /dumbbell/i.test((machineForDraft(p) || {}).name || '') ? '(per dumbbell)' : '(plates / pin)'}</span>${hsBtn}</div>
   <div class="row wrow"><span class="fdots">${fineDots('wfine', p, -1)}</span>
   <button class="step" data-a="wstep" data-p="${p}" data-d="-1" aria-label="minus">−</button>
   <div class="grow bigval" id="wv-${p}" data-testid="weight-value">${weightBig(p)}</div>
@@ -553,12 +579,15 @@ function weightPicker(p, compact = false) {
   <div class="total" id="wt-${p}" data-testid="weight-total">${weightTotal(p)}</div></div>`;
 }
 // Big number = working/added weight (what you change every set)
-const weightBig = p => wMode(p).ps ? `${fmtW(round1(P[p].add / 2))}<small>${unit()} / side</small>` : `${fmtW(P[p].add)}<small>${unit()}</small>`;
+const weightBig = p => wMode(p).arms ? (P[p].noBase ? `${fmtW(round1(P[p].add / 2))}<small>${unit()} plates / arm</small>` : `${fmtW(round1(P[p].add / 2 + (P[p].base || 0)))}<small>${unit()} / arm</small>`) : wMode(p).ps ? `${fmtW(round1(P[p].add / 2))}<small>${unit()} / side</small>` : `${fmtW(P[p].add)}<small>${unit()}</small>`;
 const weightTotal = p => { const d = P[p]; const wm = wMode(p);
   const work = wm.ps ? `2 × ${fmtW(round1(d.add / 2))} per side` : wm.hs ? `${fmtW(round1(d.add - wm.hs))} stack + ${fmtW(wm.hs)} horseshoe` : `${fmtW(d.add)} working`;
+  if (wm.arms) return d.noBase ? `<b>${fmtW(round1(d.add / 2))} plates / arm</b> · <span data-testid="base-not-set">base not set</span> <span class="bquiet">(each arm moves its own weight)</span>`
+    : `<span data-testid="weight-split"><b>${fmtW(round1(d.add / 2))} plates + ${fmtW(d.base || 0)} base</b> per arm</span> <span class="bquiet">(each arm moves its own weight)</span>`;
   if (d.noBase) return `Working <b>${fmtW(d.add)} ${unit()}</b>${wm.ps || wm.hs ? ` <span class="bquiet">(${work})</span>` : ''} · <span data-testid="base-not-set">base not set — total filled in once set</span>`;
   const tot = round1(d.add + (d.base || 0));
-  if (wm.ps || wm.hs) return `Total <b>${fmtW(tot)} ${unit()}</b> <span class="bquiet" data-testid="weight-split">(${work} + ${fmtW(d.base || 0)} base)</span>`;
+  if (wm.ps) return `<b>${fmtW(round1(d.add / 2))}/side</b> · Total <b>${fmtW(tot)} ${unit()}</b> <span class="bquiet" data-testid="weight-split">(${work} + ${fmtW(d.base || 0)} base)</span>`;
+  if (wm.hs) return `Total <b>${fmtW(tot)} ${unit()}</b> <span class="bquiet" data-testid="weight-split">(${work} + ${fmtW(d.base || 0)} base)</span>`;
   // base 0 (weight stacks) is still a set base — show working + base
   return `Total <b>${fmtW(tot)} ${unit()}</b> <span class="bquiet">(${fmtW(d.add)} working + ${fmtW(d.base || 0)} base)</span>`;
 };
@@ -718,12 +747,13 @@ async function buildExport() {
   const state = JSON.parse(JSON.stringify(S)); state.sync = Object.assign({}, state.sync, { token: '' }); // never export the secret
   return { app: 'liftlog', schema: 2, version: APP_VERSION, exportedAt: new Date().toISOString(), state, photos, journal: J.slice() }; // 2.5.7: activity log included
 }
-const CSV_COLS = ['date', 'template', 'mode', 'exercise', 'machine', 'brand', 'gym', 'type', 'set', 'weight', 'added_weight', 'base_weight', 'unit', 'reps', 'difficulty',
+const CSV_COLS = ['date', 'template', 'mode', 'exercise', 'machine', 'brand', 'gym', 'type', 'set', 'weight', 'added_weight', 'base_weight', 'per_arm_plates', 'per_arm_weight', 'unit', 'reps', 'difficulty',
   'set_seconds', 'duration_min', 'distance', 'distance_unit', 'level', 'tags', 'note', 'thoughts'];
 function entryRow(s, e) {
   const m = machById(exById(e.exId), e.mId);
   return { date: s.date, template: (tplById(s.tid) || {}).name || '', mode: s.mode, exercise: exName(e.exId), machine: m ? m.name : machName(e.exId, e.mId), brand: m ? m.brand || '' : '', gym: m ? m.gym : '', type: e.kind,
-    set: e.set || '', weight: e.kind === 'set' ? (e.base === null ? '' : e.w) : '', added_weight: e.kind === 'set' ? e.add : '', base_weight: e.kind === 'set' ? (e.base === null ? '' : (e.base || 0)) : '', unit: e.kind === 'set' ? (e.u || 'lb') : '',
+    set: e.set || '', weight: e.kind === 'set' ? (e.base === null ? '' : e.w) : '', added_weight: e.kind === 'set' ? e.add : '', base_weight: e.kind === 'set' ? (e.base === null ? '' : (e.base || 0)) : '',
+    per_arm_plates: e.kind === 'set' && armsOf(m) && e.add != null ? round1(e.add / 2) : '', per_arm_weight: e.kind === 'set' && armsOf(m) && e.add != null && e.base !== null ? round1(e.add / 2 + (e.base || 0)) : '', unit: e.kind === 'set' ? (e.u || 'lb') : '',
     reps: e.reps || '', difficulty: e.diff || '', set_seconds: e.secs || '', duration_min: e.dur || '', distance: e.dist || '', distance_unit: e.kind === 'cardio' ? (e.du || '') : '', level: e.level || '',
     tags: (e.tags || []).join('; '), note: e.note || '', thoughts: (s.thoughts || {})[e.exId] || '',
     session_id: s.id, exercise_id: e.exId, machine_id: e.mId || '', template_id: s.tid || '', ts: e.ts || '' }; // ids: sheet only (restore), not in CSV
@@ -838,6 +868,7 @@ function cloneMachine(m) {
     bu: m.bu || 'lb', gym: m.gym || '', loc: m.loc || '', cues: m.cues || '', caution: m.caution || '',
     photoId: m.photoId || undefined, start: m.start || undefined
   };
+  if (m.arms) out.arms = true;
   if (Array.isArray(m.weightChips) && m.weightChips.length) { out.weightChips = m.weightChips.slice(); out.chipBu = m.chipBu || 'lb'; }
   return out;
 }
@@ -847,7 +878,7 @@ function cloneMachine(m) {
    for it (catalog.json fieldHistory). Edited fields are kept; everything else follows the catalog as before. Ids never change. */
 const CAT_MF = ['name', 'brand', 'gym', 'loc', 'cues', 'caution', 'base'], CAT_EF = ['name', 'cues', 'pinned'];
 const catNorm = (f, v) => f === 'base' ? ((v === null || v === '' || v === undefined) ? null : +v) : String(v == null ? '' : v);
-const catSnap = (o, fields) => { const r = {}; fields.forEach(f => { r[f] = catNorm(f, o[f]); }); return r; };
+const catSnap = (o, fields) => { const r = {}; fields.forEach(f => { r[f] = catNorm(f, o[f]); }); if (fields === CAT_MF) r.arms = !!o.arms; return r; };
 function catEdited(phone, f, fileV, hist) {
   const v = catNorm(f, phone[f]);
   if (v === fileV) return false;
@@ -864,6 +895,9 @@ function applyCatalogFields(phoneM, fileM, ex, hist) {
     phoneM.weightChips = fileM.weightChips.slice();
     phoneM.chipBu = fileM.chipBu || 'lb';
   }
+  // 2.6.1 arms: follows the catalog unless changed on the phone (a phone without the field yet always takes it)
+  if (phoneM.arms === undefined || (phoneM.cat && 'arms' in phoneM.cat && !!phoneM.arms === phoneM.cat.arms)) { if (fv.arms) phoneM.arms = true; else if (phoneM.arms !== undefined) phoneM.arms = false; }
+  else if (!!phoneM.arms !== fv.arms) kept++;
   const base0 = phoneM.cat ? phoneM.cat.base : undefined;
   phoneM.cat = fv;
   // BASE RULE: file "not set" (null) keeps the phone value; a number from the file wins unless the base was set on the phone.
@@ -1576,6 +1610,23 @@ function machOrder(ex) {
   const known = new Set(mOrder.ids); const extra = sortedMachines(ex).filter(m => !known.has(m.id)).map(m => m.id); // added while open → before New
   return { list: mOrder.ids.concat(extra).map(id => machById(ex, id)).filter(Boolean), recent: mOrder.recent };
 }
+/* 2.6.1: the last 3 sessions for this exercise (no machine picked: each with its machine(s)) or on the picked machine. View-only,
+   one compact line each; on the machine screen lines never wrap (ellipsis) so the no-scroll layout holds. */
+function lastSessions(ses, ex, mId, n = 3) {
+  const out = [];
+  for (const s of sortedSessions()) { if (out.length >= n) break; if (s.id === ses.id || s.date > ses.date) continue;
+    const ents = s.entries.filter(e => e.kind === 'set' && e.exId === ex.id && (!mId || e.mId === mId)).sort((a, b) => a.ts - b.ts);
+    if (ents.length) out.push({ s, ents }); }
+  return out;
+}
+function recentSessionsHTML(ses, ex, mId) {
+  const list = lastSessions(ses, ex, mId); if (!list.length) return '';
+  const line = ({ s, ents }) => { const maxD = Math.max(0, ...ents.map(e => e.diff || 0));
+    if (mId) return `<div class="rsl" data-testid="rs-line">${esc(fmtD(s.date))} · ${esc(compactSets(ents.slice().sort((a, b) => (a.set || 0) - (b.set || 0))))}${maxD ? ' · d' + maxD : ''}</div>`;
+    const by = []; ents.forEach(e => { let g = by.find(x => x.mId === e.mId); if (!g) by.push(g = { mId: e.mId, ents: [] }); g.ents.push(e); });
+    return `<div class="rsl rsl-wrap" data-testid="rs-line"><b>${esc(fmtD(s.date))}</b> · ${by.map(g => `${esc(machName(ex.id, g.mId))} <b>${esc(compactSets(g.ents.slice().sort((a, b) => (a.set || 0) - (b.set || 0))))}</b>`).join(' · ')}</div>`; };
+  return `<div class="rsess${mId ? '' : ' card'}" data-testid="${mId ? 'recent-machine' : 'recent-exercise'}" aria-readonly="true">${mId ? '' : '<div class="sub">Last 3 sessions</div>'}${list.map(line).join('')}</div>`;
+}
 function machineGrid(ses, ex, mId, mode = 'grid') {
   const mo = machOrder(ex);
   const cards = mo.list.map(x => {
@@ -1595,6 +1646,8 @@ function viewExercise(sid, exId) {
   if (pendingDone && pendingDone.sid === sid && pendingDone.exId === exId) return viewConfirm(ses, ex);
   let p = P[draftKey(sid, exId)] ? draftKey(sid, exId) : null;
   let mId = p ? P[p].mId : null;
+  if (!mId && RESEL[draftKey(sid, exId)]) mId = RESEL[draftKey(sid, exId)];
+  delete RESEL[draftKey(sid, exId)];
   if (!mId) {
     if (ex.machines.length === 1) mId = ex.machines[0].id;
     else { const todays = ses.entries.filter(e => e.exId === exId); if (todays.length) mId = todays[todays.length - 1].mId; }
@@ -1611,9 +1664,12 @@ function viewExercise(sid, exId) {
         <div class="lm-name">${esc(mLabel(recent))}</div><div class="lm-val">${esc(lastLine(recentL, false))}</div>
         <div class="sub">${esc(fmtD(recentL.date))}${lastEnt(recentL).diff ? ' · ' + esc(DIFF_SHORT[lastEnt(recentL).diff]) : ''}</div>
         ${machFine(recent) ? `<div class="fine">${machFine(recent)}</div>` : ''}
-        <button class="btn pri" style="margin-top:12px" data-a="mach" data-m="${recent.id}" data-testid="use-last-machine">Use ${esc(mLabel(recent))}</button></div>`
+        <button class="btn pri" style="margin-top:12px" data-a="mach" data-m="${recent.id}" data-testid="use-last-machine">Use ${esc(mLabel(recent))}</button>
+        ${(((lastDayMachines(ex, ses.date) || {}).list) || []).filter(x => x.mId !== recent.id).map(x => { const om = machById(ex, x.mId); const ol = lastFor(ex.id, x.mId, null, ses.date);
+          return om && ol ? `<button class="chip sm" style="margin-top:8px" data-a="mach" data-m="${om.id}" data-testid="use-other-machine">Also ${esc(dowName(ol.date))}: ${esc(mLabel(om))} · ${esc(lastLine(ol, false))}</button>` : ''; }).join('')}</div>`
       : ex.machines.length ? '' : `<div class="empty">No machines yet — add one (name, base weight, location…).</div>`)
       + (tg && tg.mId !== (recent && recent.id) ? `<div class="target">🎯 Repeat target (${esc(dowName(tg.src.date))}): ${esc(machName(exId, tg.mId))} <b>${compactSets(tg.ents)}</b></div>` : '')
+      + recentSessionsHTML(ses, ex, null)
       + `<h3>${recent ? 'Or pick a machine' : 'Pick a machine'}</h3>${machineGrid(ses, ex, null)}`;
   } else if (ex.kind === 'cardio') {
     const l = lastFor(exId, mId, sid); const today = cardioOf(ses, exId);
@@ -1630,12 +1686,12 @@ function viewExercise(sid, exId) {
     if (todayHere.length) {
       const lastToday = todayHere[todayHere.length - 1];
       lastBlock = `<div class="last last-prom" data-testid="last"><span class="sub">${ses.date === todayStr() ? 'Today' : esc(dayWord(ses.date))} on this machine</span>
-        <b>${fmtTotal(dispW(lastToday))}${lastToday.reps ? ' × ' + lastToday.reps : ''}</b>
-        <span class="sub">${compactSets(todayHere)}${lastToday.diff ? ' · d' + lastToday.diff : ''}</span>${goUp}</div>`;
+        <b>${wLong(lastToday)}${lastToday.reps ? ' × ' + lastToday.reps : ''}</b>
+        ${(h => h || `<span class="sub">${compactSets(todayHere)}${lastToday.diff ? ' · d' + lastToday.diff : ''}</span>`)(recentSessionsHTML(ses, ex, mId))}${goUp}</div>`;
     } else if (l) {
       lastBlock = `<div class="last last-prom" data-testid="last"><span class="sub">${l.seed ? 'Starting' : 'Last'} on this machine</span>
-        <b>${fmtTotal(dispW(lastE))}${lastE.reps ? ' × ' + lastE.reps : ''}</b>
-        <span class="sub">${esc(fmtD(l.date))}${l.seed ? '' : ' · ' + compactSets(l.ents)}${lastE.diff ? ' · d' + lastE.diff : ''}</span>
+        <b>${wLong(lastE)}${lastE.reps ? ' × ' + lastE.reps : ''}</b>
+        ${l.seed ? `<span class="sub">${esc(fmtD(l.date))}</span>` : recentSessionsHTML(ses, ex, mId)}
         ${goUp}</div>`;
     } else if (todayAll.length) {
       lastBlock = `<div class="last last-prom" data-testid="last"><span class="sub">No prior history on this machine — ${ses.date === todayStr() ? "today's" : "this day's"} ${todayAll.length} set${todayAll.length === 1 ? '' : 's'} ${todayAll.length === 1 ? 'is' : 'are'} listed above</span></div>`;
@@ -1687,8 +1743,9 @@ function setbarHTML() {
   if (!d || !d.mId) return `<div class="setbar setbar-sm"><div class="inner">${th}</div></div>`;
   if (ex.kind === 'cardio') return `<div class="setbar setbar-sm"><div class="inner">${th}<button class="setbtn all" data-a="log-cardio" data-testid="log-cardio">Log cardio</button></div></div>`;
   const sets = setsOf(ses, ex.id, d.mId); const by = n => sets.find(s => s.set === n);
-  const cur = `<span class="cur">${fmtW(round1(d.add + d.base))}×${d.reps}</span>`;
-  const btn = n => { const e = by(n); return e ? `<button class="setbtn logged" data-a="edit-entry" data-sid="${ses.id}" data-id="${e.id}" data-testid="set-${n}">Set ${n} ✓<small>${fmtW(dispW(e))}×${e.reps}</small></button>`
+  const psm = perSideOf(machById(ex, d.mId)), arm = armsOf(machById(ex, d.mId));
+  const cur = `<span class="cur">${arm ? `${armTxt(round1(d.add / 2), d.noBase ? null : (d.base || 0), false)}<br>×${d.reps}` : psm ? `${fmtW(round1(d.add / 2))}/side<br>${d.noBase ? '?' : fmtW(round1(d.add + d.base))}` : fmtW(round1(d.add + d.base))}×${d.reps}</span>`;
+  const btn = n => { const e = by(n); return e ? `<button class="setbtn logged" data-a="edit-entry" data-sid="${ses.id}" data-id="${e.id}" data-testid="set-${n}">Set ${n} ✓<small>${psParts(e) ? (psParts(e).arms ? `${psShort(e)}<br>×${e.reps}` : `${fmtW(psParts(e).side)}/side<br>${psParts(e).tot === null ? '?' : fmtW(psParts(e).tot)}×${e.reps}`) : `${fmtW(dispW(e))}×${e.reps}`}</small></button>`
     : `<button class="setbtn" data-a="log-set" data-n="${n}" data-testid="set-${n}">Set ${n}<small>${cur}</small></button>`; };
   const remaining = [1, 2, 3].filter(n => !by(n)); const nx = nextSetNo(ses, ex.id, d.mId);
   const all = remaining.length === 3 ? `<button class="setbtn all" data-a="log-all" data-testid="all-sets">All 3</button>`
@@ -2183,7 +2240,7 @@ const knownBrands = () => { const b = new Set(KNOWN_BRANDS); Object.values(S.exe
 const meSide = () => ME ? (ME.perSide != null ? !!ME.perSide : perSideAuto({ brand: ME.brand, name: ME.name })) : false;
 function initME(exId, mId) {
   const ex = exById(exId); const m = mId !== 'new' && machById(ex, mId);
-  ME = { exId, key: mId, isNew: !m, brand: m ? m.brand || '' : '', perSide: m && m.perSide != null ? !!m.perSide : null, name: m ? m.name : '', gym: m ? m.gym : homeGym(), loc: m ? m.loc : '', cues: m ? m.cues : '', caution: m ? m.caution || '' : '', base: m ? (noBase(m) ? null : baseOf(m)) : 0,
+  ME = { exId, key: mId, isNew: !m, brand: m ? m.brand || '' : '', perSide: m && m.perSide != null ? !!m.perSide : null, arms: !!(m && m.arms), name: m ? m.name : '', gym: m ? m.gym : homeGym(), loc: m ? m.loc : '', cues: m ? m.cues : '', caution: m ? m.caution || '' : '', base: m ? (noBase(m) ? null : baseOf(m)) : 0,
     photoId: m ? m.photoId || null : null, origPhoto: m ? m.photoId || null : null, hasStart: m ? !!m.start : ex.kind !== 'cardio',
     startReps: m && m.start ? m.start.reps || null : null };
   // new machine: default the starting weight to the exercise's latest total on any machine (a sensible first guess)
@@ -2213,7 +2270,9 @@ function viewMachineEdit(exId, mId) {
     <div class="chips">${bases.map(b => `<button class="chip sm ${ME.base !== null && Math.abs(ME.base - b) < 1e-6 ? 'on' : ''}" data-a="me-base" data-v="${b}">${b}</button>`).join('')}<button class="chip sm ${ME.base === null ? 'on' : ''}" data-a="me-base" data-v="">Not set</button></div>
     <div class="fine">0 for weight stacks and dumbbells. Weight chips then pick the <b>added</b> weight and the app shows added + base = total.</div>
     ${hasChips(machById(ex, mId)) ? '' : `<h3>Plate entry</h3><div data-testid="me-ps">${seg('me-ps', [['total', 'Total'], ['side', 'Per side (×2)']], meSide() ? 'side' : 'total')}</div>
-    <div class="fine">Per side: enter the plates on one side; total = 2 × per side + base (Iso-Lateral / plate-loaded machines).</div>`}` : ''}
+    <div class="fine">Per side: enter the plates on one side; total = 2 × per side + base (Iso-Lateral / plate-loaded machines).</div>
+    <h3>Arms</h3><div data-testid="me-arms">${seg('me-arms', [['sep', 'Work separately'], ['shared', 'Shared load']], ME.arms ? 'sep' : 'shared')}</div>
+    <div class="fine">Work separately: each arm has its own weight (Iso-Lateral levers) — shown per arm, e.g. 32.5 + 12 base = 44.5 lb / arm, base counted per arm. Shared load: both sides add up to one weight (leg press, hack squat) — shown as per side · total.</div>`}` : ''}
     <h3>Coaching cues for this machine (optional)</h3><textarea class="field" data-i="me-cues" placeholder="e.g. seat 4, handles mid-chest" data-testid="me-cues">${esc(ME.cues)}</textarea>
     <h3>Caution for this machine (optional)</h3><textarea class="field" data-i="me-caution" placeholder="e.g. don't force depth if the shoulder pinches" data-testid="me-caution">${esc(ME.caution || '')}</textarea>
     <h3>Photo (optional)</h3><div class="chips"><button class="chip sm" data-a="me-photo" data-cap="environment">📷 Take photo</button>
@@ -2244,11 +2303,12 @@ function viewExHistory(sid, exId) {
     const add = e.add != null ? cv(e.add, e) : null, base = e.base == null ? null : cv(e.base, e);
     const tot = e.base === null ? null : round1(dispW(e));
     const w = add == null ? `${fmtW(dispW(e))} ${u}` : base === null ? `${fmtW(add)} + base? ${u}` : base ? `${fmtW(add)} + ${fmtW(base)} = ${fmtW(tot)} ${u}` : `${fmtW(tot)} ${u}`;
-    return `${w} × ${e.reps}`; };
+    const q = psParts(e); if (q && q.arms) return `${q.arm === null ? `${fmtW(q.side)} ${u} plates / arm + base?` : `${fmtW(q.arm)} ${u} / arm (${fmtW(q.side)} plates + ${fmtW(q.base)} base)`} × ${e.reps}`;
+    const ps = psLong(e); return `${ps ? ps + ' ' + u : w} × ${e.reps}`; };
   const chips = e => [...(e.tags || []).map(t => `<span class="pill">${esc(t)}</span>`), e.note ? `<span class="pill hnote">📝 ${esc(e.note)}</span>` : ''].join('');
   // per-machine summary: best (heaviest total, then most reps; longest for cardio) and last
   const byM = {}; all.forEach(r => { (byM[r.e.mId] = byM[r.e.mId] || []).push(r); });
-  const short = r => r.e.kind === 'cardio' ? cardioSummary(r.e) : `${fmtW(r.e.base === null ? cv(r.e.add, r.e) : dispW(r.e))}${r.e.base === null ? '+base?' : ''}×${r.e.reps}`;
+  const short = r => r.e.kind === 'cardio' ? cardioSummary(r.e) : psShort(r.e) ? `${psShort(r.e)}×${r.e.reps}` : `${fmtW(r.e.base === null ? cv(r.e.add, r.e) : dispW(r.e))}${r.e.base === null ? '+base?' : ''}×${r.e.reps}`;
   const sum = Object.entries(byM).map(([mId, rs]) => { const best = rs.slice().sort((a, b) => a.e.kind === 'cardio' ? (b.e.dur || 0) - (a.e.dur || 0) : (dispW(b.e) - dispW(a.e)) || (b.e.reps - a.e.reps))[0]; const last = rs[0];
     return `<div class="hsum-row" data-testid="hsum-row" data-m="${esc(mId)}"><b>${hLabel(last.e)}</b><div class="sub">best <b>${short(best)}</b> · ${esc(fmtShort(best.x.date))} &nbsp;·&nbsp; last <b>${short(last)}</b> · ${esc(fmtShort(last.x.date))} &nbsp;·&nbsp; ${rs.length} ${rs[0].e.kind === 'cardio' ? 'entr' + (rs.length === 1 ? 'y' : 'ies') : 'set' + (rs.length === 1 ? '' : 's')}</div></div>`; }).join('');
   let lastD = null; const rows = all.map(({ e, x }) => { const head = x.date !== lastD ? `<h3 class="hday" data-testid="hday">${esc(fmtD(x.date))} <span class="sub">· ${esc((tplById(x.tid) || {}).name || 'Workout')}</span></h3>` : ''; lastD = x.date;
@@ -2674,7 +2734,8 @@ document.addEventListener('click', async ev => {
     // machine editor
     case 'me-gym': ME.gym = ds.v; return render();
     case 'me-brand': ME.brand = ds.v; return render();
-    case 'me-ps': ME.perSide = ds.v === 'side'; return render();
+    case 'me-ps': ME.perSide = ds.v === 'side'; if (!ME.perSide) ME.arms = false; return render();
+    case 'me-arms': ME.arms = ds.v === 'sep'; ME.armsSet = true; if (ME.arms) ME.perSide = true; return render();
     case 'me-gym-new': { const g = await askText('New gym tag', '', 'e.g. San Jose'); if (g) ME.gym = g; return render(); }
     case 'me-base': return meSetBase(ds.v === '' ? null : +ds.v);
     case 'me-bstep': return meSetBase(clamp(round1((ME.base || 0) + (+ds.d) * (unit() === 'kg' ? 2.5 : 5)), 0, 200));
@@ -2744,6 +2805,7 @@ function saveMachine() {
   const brand = (ME.brand || '').trim();
   const renamed = !ME.isNew && (m.name !== name || (m.brand || '') !== brand);
   if (ME.perSide != null && ex.kind !== 'cardio') m.perSide = !!ME.perSide;
+  if ((ME.armsSet || m.arms !== undefined) && ex.kind !== 'cardio') m.arms = !!ME.arms;
   Object.assign(m, { brand, name, gym: (ME.gym || '').trim(), loc: (ME.loc || '').trim(), cues: (ME.cues || '').trim(), caution: (ME.caution || '').trim(), bu: m.bu || unit() });
   if (m.base === undefined) m.base = null;
   setMachineBase(ex, m, ex.kind === 'cardio' ? 0 : ME.base);
@@ -2753,7 +2815,7 @@ function saveMachine() {
     if (ME.hasStart && !(round1(P.me.add + (ME.base || 0)) === 0 && !ME.startReps)) m.start = { w: round1(P.me.add + (ME.base || 0)), u: unit(), reps: ME.startReps || null, date: (m.start && m.start.date) || todayStr(), ts: nowTs() };
     else delete m.start;
   }
-  Object.keys(P).forEach(k => { if (P[k] && P[k].mId === m.id) delete P[k]; }); // re-derive drafts with the new base
+  Object.keys(P).forEach(k => { if (P[k] && P[k].mId === m.id) { delete P[k]; RESEL[k] = m.id; } }); // re-derive drafts with the new base, keep the machine selected (2.6.1)
   ME.origPhoto = ME.photoId; // saved: don't clean up
   if (renamed) markExDirty(ex.id);
   persist(); const ret = meReturn || `#/set/e/${ex.id}`; ME = null; toast(`Saved ${mLabel(m)}`); go(ret);

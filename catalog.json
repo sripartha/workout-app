@@ -1,12 +1,12 @@
 {
  "app": "liftlog",
  "schema": 2,
- "version": "2.6.0",
- "catalogVersion": 1792235080208,
- "exportedAt": "2026-10-17T11:04:41.996457Z",
+ "version": "2.6.1",
+ "catalogVersion": 1792248541764,
+ "exportedAt": "2026-10-17T14:49:04.054594Z",
  "state": {
   "v": 2,
-  "created": 1792235080208,
+  "created": 1792248541764,
   "setupDone": true,
   "lastExport": null,
   "settings": {
@@ -76,7 +76,8 @@
       "gym": "Lakeway",
       "loc": "9-11",
       "cues": "Elbows ~30-45° from torso (not fully flared), chest up, back supported by the pad",
-      "caution": "Don't force excessive depth if the shoulder starts to pinch"
+      "caution": "Don't force excessive depth if the shoulder starts to pinch",
+      "arms": true
      }
     ],
     "pinned": "",
@@ -118,7 +119,8 @@
       "gym": "Lakeway",
       "loc": "9-10",
       "cues": "Elbows tucked ~30-45° (not flared), handles start around armpit/upper chest, controlled range of motion",
-      "caution": "Don't force the bottom position if the right shoulder feels pinchy"
+      "caution": "Don't force the bottom position if the right shoulder feels pinchy",
+      "arms": true
      },
      {
       "id": "m-nautilus-leverage-incline-press",
@@ -149,7 +151,8 @@
       "gym": "Lakeway",
       "loc": "9-9",
       "cues": "Elbows ~30-45° from torso, controlled range of motion",
-      "caution": "Don't force excessive depth if the shoulder starts to pinch"
+      "caution": "Don't force excessive depth if the shoulder starts to pinch",
+      "arms": true
      }
     ],
     "pinned": "",
@@ -287,7 +290,8 @@
       "gym": "Lakeway",
       "loc": "9-7",
       "cues": "Elbows tucked/aligned (not flared), handles start at shoulder/upper-chest level (not near nipples), forearms ~vertical, controlled return, don't let elbows travel far behind the torso",
-      "caution": ""
+      "caution": "",
+      "arms": true
      },
      {
       "id": "m-hammer-strength-select-shoulder-press",
@@ -407,7 +411,8 @@
       "gym": "Lakeway",
       "loc": "9-8",
       "cues": "Independent levers, drive elbows down",
-      "caution": ""
+      "caution": "",
+      "arms": true
      }
     ],
     "pinned": "",
@@ -463,7 +468,8 @@
       "gym": "Lakeway",
       "loc": "9-4",
       "cues": "Independent levers, elbows tucked",
-      "caution": ""
+      "caution": "",
+      "arms": true
      }
     ],
     "pinned": "",
@@ -483,7 +489,8 @@
       "gym": "Lakeway",
       "loc": "10-6",
       "cues": "Elbows flared and up; focus on squeezing the back · Elbows flared for upper back, one arm at a time, lean forward so chest is firmly on the pad, don't count the set if you sit back and lose chest support",
-      "caution": ""
+      "caution": "",
+      "arms": true
      }
     ],
     "pinned": "",
@@ -636,6 +643,7 @@
       "loc": "10-1",
       "cues": "Independent levers, one leg at a time",
       "caution": "",
+      "arms": true,
       "photoId": "photo-98744134"
      },
      {
@@ -881,10 +889,12 @@
   },
   "m-hoist-roc-it-chest-press": {
    "name": [
-    "HOIST ROC-IT Chest Press"
+    "HOIST ROC-IT Chest Press",
+    "ROC-IT Chest Press"
    ],
    "brand": [
-    ""
+    "",
+    "HOIST"
    ],
    "gym": [
     "Austin",
@@ -905,10 +915,12 @@
   },
   "m-nautilus-leverage-chest-press": {
    "name": [
-    "Nautilus Leverage Chest Press"
+    "Nautilus Leverage Chest Press",
+    "Chest Press"
    ],
    "brand": [
-    ""
+    "",
+    "Nautilus Leverage"
    ],
    "gym": [
     ""
@@ -928,10 +940,12 @@
   },
   "m-hammer-strength-select-chest-press": {
    "name": [
-    "Hammer Strength Select Chest Press"
+    "Hammer Strength Select Chest Press",
+    "Select Chest Press"
    ],
    "brand": [
-    ""
+    "",
+    "Hammer Strength"
    ],
    "gym": [
     "Austin",
@@ -952,10 +966,12 @@
   },
   "m-nautilus-selectorized-chest-press-lakeway": {
    "name": [
-    "Nautilus Selectorized Chest Press (Lakeway)"
+    "Nautilus Selectorized Chest Press (Lakeway)",
+    "Selectorized Chest Press (Lakeway)"
    ],
    "brand": [
-    ""
+    "",
+    "Nautilus"
    ],
    "gym": [
     "Austin",
@@ -1010,10 +1026,12 @@
   },
   "m-hammer-strength-select-incline-press": {
    "name": [
-    "Hammer Strength Select Incline Press"
+    "Hammer Strength Select Incline Press",
+    "Select Incline Press"
    ],
    "brand": [
-    ""
+    "",
+    "Hammer Strength"
    ],
    "gym": [
     "Austin",
@@ -1115,10 +1133,12 @@
   },
   "m-nautilus-impact-deltoid-fly-pec-fly": {
    "name": [
-    "Nautilus Impact Deltoid Fly / Pec Fly"
+    "Nautilus Impact Deltoid Fly / Pec Fly",
+    "Deltoid Fly / Pec Fly"
    ],
    "brand": [
-    ""
+    "",
+    "Nautilus Impact"
    ],
    "gym": [
     "Austin",
@@ -1197,10 +1217,12 @@
   },
   "m-matrix-triceps-press": {
    "name": [
-    "Matrix Triceps Press"
+    "Matrix Triceps Press",
+    "Triceps Press"
    ],
    "brand": [
-    ""
+    "",
+    "Matrix"
    ],
    "gym": [
     ""
@@ -1220,10 +1242,12 @@
   },
   "m-nautilus-impact-triceps-extension": {
    "name": [
-    "Nautilus Impact Triceps Extension"
+    "Nautilus Impact Triceps Extension",
+    "Triceps Extension"
    ],
    "brand": [
-    ""
+    "",
+    "Nautilus Impact"
    ],
    "gym": [
     "Austin",
@@ -1255,10 +1279,12 @@
   },
   "m-hoist-seated-dip": {
    "name": [
-    "HOIST Seated Dip"
+    "HOIST Seated Dip",
+    "Seated Dip"
    ],
    "brand": [
-    ""
+    "",
+    "HOIST"
    ],
    "gym": [
     "Austin",
@@ -1338,10 +1364,12 @@
   },
   "m-hammer-strength-select-shoulder-press": {
    "name": [
-    "Hammer Strength Select Shoulder Press"
+    "Hammer Strength Select Shoulder Press",
+    "Select Shoulder Press"
    ],
    "brand": [
-    ""
+    "",
+    "Hammer Strength"
    ],
    "gym": [
     "Austin",
@@ -1362,10 +1390,12 @@
   },
   "m-hoist-shoulder-press": {
    "name": [
-    "HOIST Shoulder Press"
+    "HOIST Shoulder Press",
+    "Shoulder Press"
    ],
    "brand": [
-    ""
+    "",
+    "HOIST"
    ],
    "gym": [
     "Austin",
@@ -1397,10 +1427,12 @@
   },
   "m-nautilus-impact-deltoid-raise": {
    "name": [
-    "Nautilus Impact Deltoid Raise"
+    "Nautilus Impact Deltoid Raise",
+    "Deltoid Raise"
    ],
    "brand": [
-    ""
+    "",
+    "Nautilus Impact"
    ],
    "gym": [
     ""
@@ -1431,10 +1463,12 @@
   },
   "m-hoist-lat-pulldown": {
    "name": [
-    "HOIST Lat Pulldown"
+    "HOIST Lat Pulldown",
+    "Lat Pulldown"
    ],
    "brand": [
-    ""
+    "",
+    "HOIST"
    ],
    "gym": [
     ""
@@ -1565,7 +1599,8 @@
    "cues": [
     "Elbows flared for upper back, one arm at a time, lean forward so chest is firmly on the pad, don't count the set if you sit back and lose chest support",
     "Elbows flared for upper back, one arm at a time, lean forward so chest is firmly on the pad, don't count the set if you sit back and lose chest support · Confirm this is the Upper-Back Row machine",
-    "Elbows flared and up; focus on squeezing the back · Elbows flared for upper back, one arm at a time, lean forward so chest is firmly on the pad, don't count the set if you sit back and lose chest support · Confirm this is the Upper-Back Row machine"
+    "Elbows flared and up; focus on squeezing the back · Elbows flared for upper back, one arm at a time, lean forward so chest is firmly on the pad, don't count the set if you sit back and lose chest support · Confirm this is the Upper-Back Row machine",
+    "Elbows flared and up; focus on squeezing the back · Elbows flared for upper back, one arm at a time, lean forward so chest is firmly on the pad, don't count the set if you sit back and lose chest support"
    ],
    "caution": [
     ""
@@ -1648,10 +1683,12 @@
   },
   "m-rear-delt-fly-nautilus-impact-deltoid-fly-pec-fly": {
    "name": [
-    "Nautilus Impact Deltoid Fly / Pec Fly"
+    "Nautilus Impact Deltoid Fly / Pec Fly",
+    "Deltoid Fly / Pec Fly"
    ],
    "brand": [
-    ""
+    "",
+    "Nautilus Impact"
    ],
    "gym": [
     "Austin",
@@ -1729,10 +1766,12 @@
   },
   "m-hoist-biceps-curl": {
    "name": [
-    "HOIST Biceps Curl"
+    "HOIST Biceps Curl",
+    "Biceps Curl"
    ],
    "brand": [
-    ""
+    "",
+    "HOIST"
    ],
    "gym": [
     "Austin",
@@ -1764,10 +1803,12 @@
   },
   "m-nautilus-hack-squat-lakeway": {
    "name": [
-    "Nautilus Hack Squat (Lakeway)"
+    "Nautilus Hack Squat (Lakeway)",
+    "Hack Squat (Lakeway)"
    ],
    "brand": [
-    ""
+    "",
+    "Nautilus"
    ],
    "gym": [
     "Austin",
@@ -1823,10 +1864,12 @@
   "m-nautilus-angled-leg-press": {
    "name": [
     "Nautilus Angled Leg Press",
-    "Nautilus Leverage Angled Leg Press"
+    "Nautilus Leverage Angled Leg Press",
+    "Angled Leg Press"
    ],
    "brand": [
-    ""
+    "",
+    "Nautilus"
    ],
    "gym": [
     "Austin",
@@ -1882,10 +1925,12 @@
   },
   "m-hammer-strength-iso-lateral-leg-extension": {
    "name": [
-    "Hammer Strength Iso-Lateral Leg Extension"
+    "Hammer Strength Iso-Lateral Leg Extension",
+    "Iso-Lateral Leg Extension"
    ],
    "brand": [
-    ""
+    "",
+    "Hammer Strength"
    ],
    "gym": [
     "Austin",
@@ -1929,10 +1974,12 @@
   },
   "m-nautilus-inspiration-leg-extension": {
    "name": [
-    "Nautilus Inspiration Leg Extension"
+    "Nautilus Inspiration Leg Extension",
+    "Leg Extension"
    ],
    "brand": [
-    ""
+    "",
+    "Nautilus Inspiration"
    ],
    "gym": [
     "Austin",
@@ -1964,10 +2011,12 @@
   },
   "m-nautilus-inspiration-seated-leg-curl": {
    "name": [
-    "Nautilus Inspiration Seated Leg Curl"
+    "Nautilus Inspiration Seated Leg Curl",
+    "Seated Leg Curl"
    ],
    "brand": [
-    ""
+    "",
+    "Nautilus Inspiration"
    ],
    "gym": [
     "Austin",
@@ -2138,10 +2187,12 @@
   },
   "m-nautilus-standing-calf-raise": {
    "name": [
-    "Nautilus Standing Calf Raise"
+    "Nautilus Standing Calf Raise",
+    "Standing Calf Raise"
    ],
    "brand": [
-    ""
+    "",
+    "Nautilus"
    ],
    "gym": [
     "Austin",
@@ -2162,10 +2213,12 @@
   },
   "m-nautilus-tilt-seat-calf": {
    "name": [
-    "Nautilus Tilt Seat Calf"
+    "Nautilus Tilt Seat Calf",
+    "Tilt Seat Calf"
    ],
    "brand": [
-    ""
+    "",
+    "Nautilus"
    ],
    "gym": [
     ""
@@ -2185,10 +2238,12 @@
   },
   "m-hammer-strength-iso-lateral-bench-press": {
    "name": [
-    "Hammer Strength Iso-Lateral Bench Press"
+    "Hammer Strength Iso-Lateral Bench Press",
+    "Iso-Lateral Bench Press"
    ],
    "brand": [
-    ""
+    "",
+    "Hammer Strength"
    ],
    "gym": [
     "Austin",
@@ -2209,10 +2264,12 @@
   },
   "m-hammer-strength-iso-lateral-incline-press": {
    "name": [
-    "Hammer Strength Iso-Lateral Incline Press"
+    "Hammer Strength Iso-Lateral Incline Press",
+    "Iso-Lateral Incline Press"
    ],
    "brand": [
-    ""
+    "",
+    "Hammer Strength"
    ],
    "gym": [
     "Austin",
@@ -2244,10 +2301,12 @@
   },
   "m-hammer-strength-iso-lateral-decline-press": {
    "name": [
-    "Hammer Strength Iso-Lateral Decline Press"
+    "Hammer Strength Iso-Lateral Decline Press",
+    "Iso-Lateral Decline Press"
    ],
    "brand": [
-    ""
+    "",
+    "Hammer Strength"
    ],
    "gym": [
     "Austin",
@@ -2268,10 +2327,12 @@
   },
   "m-hammer-strength-iso-lateral-front-lat-pulldown": {
    "name": [
-    "Hammer Strength Iso-Lateral Front Lat Pulldown"
+    "Hammer Strength Iso-Lateral Front Lat Pulldown",
+    "Iso-Lateral Front Lat Pulldown"
    ],
    "brand": [
-    ""
+    "",
+    "Hammer Strength"
    ],
    "gym": [
     "Austin",
@@ -2292,10 +2353,12 @@
   },
   "m-hammer-strength-iso-lateral-low-row": {
    "name": [
-    "Hammer Strength Iso-Lateral Low Row"
+    "Hammer Strength Iso-Lateral Low Row",
+    "Iso-Lateral Low Row"
    ],
    "brand": [
-    ""
+    "",
+    "Hammer Strength"
    ],
    "gym": [
     "Austin",
@@ -2350,10 +2413,12 @@
   },
   "m-nautilus-leverage-incline-press": {
    "name": [
-    "Nautilus Leverage Incline Press"
+    "Nautilus Leverage Incline Press",
+    "Incline Press"
    ],
    "brand": [
-    ""
+    "",
+    "Nautilus Leverage"
    ],
    "gym": [
     "Lakeway"
