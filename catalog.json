@@ -1,12 +1,12 @@
 {
  "app": "liftlog",
  "schema": 2,
- "version": "2.6.2",
- "catalogVersion": 1792250572410,
- "exportedAt": "2026-10-17T15:22:53.888449Z",
+ "version": "2.6.3",
+ "catalogVersion": 1792413618419,
+ "exportedAt": "2026-10-19T12:40:19.868020Z",
  "state": {
   "v": 2,
-  "created": 1792250572410,
+  "created": 1792413618419,
   "setupDone": true,
   "lastExport": null,
   "settings": {
@@ -41,11 +41,11 @@
       "name": "Chest Press",
       "base": null,
       "bu": "lb",
-      "gym": "",
-      "loc": "",
+      "gym": "Lakeway",
+      "loc": "10-11",
       "cues": "Elbows flared, sit upright with back against the pad, handles start beside the chest, press forward",
       "caution": "",
-      "mtype": "pshared"
+      "mtype": "psplit"
      },
      {
       "id": "m-hammer-strength-select-chest-press",
@@ -75,7 +75,7 @@
       "id": "m-hammer-strength-iso-lateral-bench-press",
       "brand": "Hammer Strength",
       "name": "Iso-Lateral Bench Press",
-      "base": null,
+      "base": 7,
       "bu": "lb",
       "gym": "Lakeway",
       "loc": "9-11",
@@ -120,7 +120,7 @@
       "id": "m-hammer-strength-iso-lateral-incline-press",
       "brand": "Hammer Strength",
       "name": "Iso-Lateral Incline Press",
-      "base": null,
+      "base": 8,
       "bu": "lb",
       "gym": "Lakeway",
       "loc": "9-10",
@@ -138,7 +138,7 @@
       "loc": "10-10",
       "cues": "",
       "caution": "",
-      "mtype": "pshared"
+      "mtype": "psplit"
      }
     ],
     "pinned": "",
@@ -153,7 +153,7 @@
       "id": "m-hammer-strength-iso-lateral-decline-press",
       "brand": "Hammer Strength",
       "name": "Iso-Lateral Decline Press",
-      "base": null,
+      "base": 6,
       "bu": "lb",
       "gym": "Lakeway",
       "loc": "9-9",
@@ -298,7 +298,7 @@
       "id": "m-plate-loaded-iso-lateral-shoulder-press",
       "brand": "",
       "name": "Plate-Loaded Iso-Lateral Shoulder Press",
-      "base": null,
+      "base": 10,
       "bu": "lb",
       "gym": "Lakeway",
       "loc": "9-7",
@@ -425,7 +425,7 @@
       "id": "m-hammer-strength-iso-lateral-front-lat-pulldown",
       "brand": "Hammer Strength",
       "name": "Iso-Lateral Front Lat Pulldown",
-      "base": null,
+      "base": 1,
       "bu": "lb",
       "gym": "Lakeway",
       "loc": "9-8",
@@ -483,7 +483,7 @@
       "id": "m-hammer-strength-iso-lateral-low-row",
       "brand": "Hammer Strength",
       "name": "Iso-Lateral Low Row",
-      "base": null,
+      "base": 8,
       "bu": "lb",
       "gym": "Lakeway",
       "loc": "9-4",
@@ -523,13 +523,25 @@
     "machines": [
      {
       "id": "m-iso-lateral-high-row",
-      "brand": "",
+      "brand": "Hammer Strength",
+      "name": "Iso-Lateral Row",
+      "base": 12,
+      "bu": "lb",
+      "gym": "Lakeway",
+      "loc": "9-6",
+      "cues": "Chest planted on the support, shoulders down, drive elbows fully back, controlled",
+      "caution": "",
+      "mtype": "psplit"
+     },
+     {
+      "id": "m-hammer-strength-iso-lateral-high-row",
+      "brand": "Hammer Strength",
       "name": "Iso-Lateral High Row",
       "base": null,
       "bu": "lb",
       "gym": "Lakeway",
       "loc": "9-5",
-      "cues": "Chest planted on the support, shoulders down, drive elbows fully back, controlled",
+      "cues": "",
       "caution": "",
       "mtype": "psplit"
      },
@@ -805,7 +817,7 @@
       "loc": "9-C",
       "cues": "",
       "caution": "Reported a significant pull under the inside of the right heel after using this machine",
-      "mtype": "stack",
+      "mtype": "pshared",
       "photoId": "photo-cc76cf1c"
      },
      {
@@ -818,7 +830,7 @@
       "loc": "",
       "cues": "",
       "caution": "",
-      "mtype": "stack"
+      "mtype": "pshared"
      }
     ],
     "pinned": "",
@@ -988,11 +1000,13 @@
   "m-hammer-strength-select-chest-press": {
    "name": [
     "Hammer Strength Select Chest Press",
-    "Select Chest Press"
+    "Select Chest Press",
+    "Chest Press"
    ],
    "brand": [
     "",
-    "Hammer Strength"
+    "Hammer Strength",
+    "Hammer Strength MTS"
    ],
    "gym": [
     "Austin",
@@ -1014,11 +1028,13 @@
   "m-nautilus-selectorized-chest-press-lakeway": {
    "name": [
     "Nautilus Selectorized Chest Press (Lakeway)",
-    "Selectorized Chest Press (Lakeway)"
+    "Selectorized Chest Press (Lakeway)",
+    "Chest Press"
    ],
    "brand": [
     "",
-    "Nautilus"
+    "Nautilus",
+    "Nautilus Inspiration"
    ],
    "gym": [
     "Austin",
@@ -1074,11 +1090,13 @@
   "m-hammer-strength-select-incline-press": {
    "name": [
     "Hammer Strength Select Incline Press",
-    "Select Incline Press"
+    "Select Incline Press",
+    "Incline Press"
    ],
    "brand": [
     "",
-    "Hammer Strength"
+    "Hammer Strength",
+    "Hammer Strength MTS"
    ],
    "gym": [
     "Austin",
@@ -1412,11 +1430,13 @@
   "m-hammer-strength-select-shoulder-press": {
    "name": [
     "Hammer Strength Select Shoulder Press",
-    "Select Shoulder Press"
+    "Select Shoulder Press",
+    "Shoulder Press"
    ],
    "brand": [
     "",
-    "Hammer Strength"
+    "Hammer Strength",
+    "Hammer Strength MTS"
    ],
    "gym": [
     "Austin",
@@ -2481,6 +2501,29 @@
    ],
    "base": [
     null
+   ]
+  },
+  "m-hammer-strength-mts-high-row": {
+   "name": [
+    "High Row"
+   ],
+   "brand": [
+    "Hammer Strength MTS"
+   ],
+   "gym": [
+    "Lakeway"
+   ],
+   "loc": [
+    "8-10"
+   ],
+   "cues": [
+    ""
+   ],
+   "caution": [
+    ""
+   ],
+   "base": [
+    0
    ]
   }
  }

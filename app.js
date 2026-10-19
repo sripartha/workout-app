@@ -1,7 +1,7 @@
 /* Lift Log — tap-only workout logger PWA. Plain JS, no build step, no dependencies. */
 'use strict';
 (function () {
-const APP_VERSION = '2.6.2';
+const APP_VERSION = '2.6.3';
 const LB_PER_KG = 2.20462;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -2991,6 +2991,35 @@ function removeSJ2510() {
    brand already set is left exactly as it is. Ids never change, so every logged set stays attached. One Activity-log entry with the
    before/after of each machine; "Restore this" there (or Undo on the one-time notice) puts the old names back. */
 const BRAND_SPLIT_260 = {"m-hoist-roc-it-chest-press":{"old":["HOIST ROC-IT Chest Press"],"brand":"HOIST","name":"ROC-IT Chest Press"},"m-nautilus-leverage-chest-press":{"old":["Nautilus Leverage Chest Press"],"brand":"Nautilus Leverage","name":"Chest Press"},"m-hammer-strength-select-chest-press":{"old":["Hammer Strength Select Chest Press"],"brand":"Hammer Strength","name":"Select Chest Press"},"m-nautilus-selectorized-chest-press-lakeway":{"old":["Nautilus Selectorized Chest Press (Lakeway)"],"brand":"Nautilus","name":"Selectorized Chest Press (Lakeway)"},"m-hammer-strength-iso-lateral-bench-press":{"old":["Hammer Strength Iso-Lateral Bench Press"],"brand":"Hammer Strength","name":"Iso-Lateral Bench Press"},"m-hammer-strength-select-incline-press":{"old":["Hammer Strength Select Incline Press"],"brand":"Hammer Strength","name":"Select Incline Press"},"m-hammer-strength-iso-lateral-incline-press":{"old":["Hammer Strength Iso-Lateral Incline Press"],"brand":"Hammer Strength","name":"Iso-Lateral Incline Press"},"m-nautilus-leverage-incline-press":{"old":["Nautilus Leverage Incline Press"],"brand":"Nautilus Leverage","name":"Incline Press"},"m-hammer-strength-iso-lateral-decline-press":{"old":["Hammer Strength Iso-Lateral Decline Press"],"brand":"Hammer Strength","name":"Iso-Lateral Decline Press"},"m-nautilus-impact-deltoid-fly-pec-fly":{"old":["Nautilus Impact Deltoid Fly / Pec Fly"],"brand":"Nautilus Impact","name":"Deltoid Fly / Pec Fly"},"m-matrix-triceps-press":{"old":["Matrix Triceps Press"],"brand":"Matrix","name":"Triceps Press"},"m-nautilus-impact-triceps-extension":{"old":["Nautilus Impact Triceps Extension"],"brand":"Nautilus Impact","name":"Triceps Extension"},"m-hoist-seated-dip":{"old":["HOIST Seated Dip"],"brand":"HOIST","name":"Seated Dip"},"m-hammer-strength-select-shoulder-press":{"old":["Hammer Strength Select Shoulder Press"],"brand":"Hammer Strength","name":"Select Shoulder Press"},"m-hoist-shoulder-press":{"old":["HOIST Shoulder Press"],"brand":"HOIST","name":"Shoulder Press"},"m-nautilus-impact-deltoid-raise":{"old":["Nautilus Impact Deltoid Raise"],"brand":"Nautilus Impact","name":"Deltoid Raise"},"m-hoist-lat-pulldown":{"old":["HOIST Lat Pulldown"],"brand":"HOIST","name":"Lat Pulldown"},"m-hammer-strength-iso-lateral-front-lat-pulldown":{"old":["Hammer Strength Iso-Lateral Front Lat Pulldown"],"brand":"Hammer Strength","name":"Iso-Lateral Front Lat Pulldown"},"m-hammer-strength-iso-lateral-low-row":{"old":["Hammer Strength Iso-Lateral Low Row"],"brand":"Hammer Strength","name":"Iso-Lateral Low Row"},"m-rear-delt-fly-nautilus-impact-deltoid-fly-pec-fly":{"old":["Nautilus Impact Deltoid Fly / Pec Fly"],"brand":"Nautilus Impact","name":"Deltoid Fly / Pec Fly"},"m-hoist-biceps-curl":{"old":["HOIST Biceps Curl"],"brand":"HOIST","name":"Biceps Curl"},"m-nautilus-hack-squat-lakeway":{"old":["Nautilus Hack Squat (Lakeway)"],"brand":"Nautilus","name":"Hack Squat (Lakeway)"},"m-nautilus-angled-leg-press":{"old":["Nautilus Angled Leg Press","Nautilus Leverage Angled Leg Press"],"brand":"Nautilus","name":"Angled Leg Press"},"m-hammer-strength-iso-lateral-leg-extension":{"old":["Hammer Strength Iso-Lateral Leg Extension"],"brand":"Hammer Strength","name":"Iso-Lateral Leg Extension"},"m-nautilus-inspiration-leg-extension":{"old":["Nautilus Inspiration Leg Extension"],"brand":"Nautilus Inspiration","name":"Leg Extension"},"m-nautilus-inspiration-seated-leg-curl":{"old":["Nautilus Inspiration Seated Leg Curl"],"brand":"Nautilus Inspiration","name":"Seated Leg Curl"},"m-nautilus-standing-calf-raise":{"old":["Nautilus Standing Calf Raise"],"brand":"Nautilus","name":"Standing Calf Raise"},"m-nautilus-tilt-seat-calf":{"old":["Nautilus Tilt Seat Calf"],"brand":"Nautilus","name":"Tilt Seat Calf"}};
+/* 2.6.3 one-time (flag S.migrated.gym263), Sri confirmed at the gym Oct 19: these exact fields on these exact ids, even if they were
+   edited on the phone (phone edits otherwise win over the catalog). Runs after the catalog is applied and also sets the catalog
+   snapshot (m.cat) to the new values so later catalog updates treat them as catalog values. Logged sets are never touched (a new base
+   does not rewrite saved add / base / total). One Activity-log entry; "Restore this" puts the old values back. */
+const GYM_263 = {
+  'm-iso-lateral-high-row': { name: 'Iso-Lateral Row', brand: 'Hammer Strength', loc: '9-6', base: 12, bu: 'lb', mtype: 'psplit' },
+  'm-hammer-strength-iso-lateral-low-row': { base: 8, bu: 'lb', mtype: 'psplit' },
+  'm-plate-loaded-iso-lateral-shoulder-press': { base: 10, bu: 'lb' },
+  'm-hammer-strength-iso-lateral-front-lat-pulldown': { base: 1, bu: 'lb' },
+  'm-hammer-strength-iso-lateral-decline-press': { base: 6, bu: 'lb' },
+  'm-hammer-strength-iso-lateral-incline-press': { base: 8, bu: 'lb' },
+  'm-hammer-strength-iso-lateral-bench-press': { base: 7, bu: 'lb' },
+};
+function gymFix263() {
+  if (!S.migrated) S.migrated = {};
+  if (S.migrated.gym263) return 0;
+  const done = [];
+  Object.values(S.exercises).forEach(ex => (ex.machines || []).forEach(m => {
+    const fix = GYM_263[m.id]; if (!fix) return;
+    const before = mLabel(m); let ch = false;
+    Object.entries(fix).forEach(([f, v]) => { if (m[f] !== v) { m[f] = v; ch = true; } if (m.cat && f in m.cat) m.cat[f] = catNorm(f, v); });
+    if (ch) done.push(m.id === 'm-iso-lateral-high-row' ? `${before} → ${mLabel(m)} (9-6, base 12 lb / arm)` : `${mLabel(m)} base ${fix.base} lb / arm`);
+    Object.keys(P).forEach(k => { if (P[k] && P[k].mId === m.id && P[k].base !== undefined) { P[k].base = baseOf(m); P[k].noBase = noBase(m); } });
+  }));
+  S.migrated.gym263 = true;
+  if (done.length) jCtx = { action: 'catalog-fix', label: `Gym check Oct 19: ${done.join(' · ')}` };
+  persist();
+  return done.length;
+}
 function brandSplit260() {
   if (!S.migrated) S.migrated = {};
   if (S.migrated.brand260) return 0;
@@ -3036,6 +3065,7 @@ function undoBrandSplit(entry) {
   try { brandSplit260(); } catch (e) { console.warn('brand split failed', e); }
   // Auto-apply published catalog before first paint when possible (first-run setup + updates).
   await checkCatalogUpdate();
+  try { gymFix263(); } catch (e) { console.warn('gym fix failed', e); }
   persist();
   render(); registerSW();
   // one-time notices, one after another; each is cleared once it has been on screen for 3 s
