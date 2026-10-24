@@ -1,7 +1,7 @@
 /* Lift Log — tap-only workout logger PWA. Plain JS, no build step, no dependencies. */
 'use strict';
 (function () {
-const APP_VERSION = '2.6.3';
+const APP_VERSION = '2.6.4';
 const LB_PER_KG = 2.20462;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -421,7 +421,7 @@ const armTxt = (side, base, long) => base === null ? `${fmtW(side)}${long ? ' pl
 const psLong = e => { const q = psParts(e); return q && (q.dstack ? `${fmtW(q.arm)}/arm${q.nob ? ' + base?' : ''}` : q.arms ? armTxt(q.side, q.base, true) : `${fmtW(q.side)}/side · ${q.tot === null ? 'base?' : fmtW(q.tot) + ' total'}`); };
 const psShort = e => { const q = psParts(e); return q && (q.dstack ? `${fmtW(q.arm)}/arm` : q.arms ? armTxt(q.side, q.base, false) : `${fmtW(q.side)}/side · ${q.tot === null ? '?' : fmtW(q.tot)}`); };
 const wChip = e => psShort(e) || fmtW(dispW(e)); // set chips / set bar
-const wLong = e => { const q = psParts(e); if (q && q.dstack) return `${fmtW(q.arm)} ${unit()} / arm${q.nob ? ' + base?' : ''}`; if (q && q.arms) return q.arm === null ? `${fmtW(q.side)} ${unit()} plates / arm + base?` : `${fmtW(q.arm)} ${unit()} / arm`; return psLong(e) || fmtTotal(dispW(e)); }; // headline
+const wLong = e => { const q = psParts(e); if (q && q.dstack) return `${fmtW(q.arm)} ${unit()} / arm${q.nob ? ' + base?' : ''}`; if (q && q.arms) return q.arm === null ? `${fmtW(q.side)} ${unit()} plates / arm + base?` : `${fmtW(q.arm)} ${unit()} / arm${q.base ? `<span class="wsplit"> (${fmtW(q.side)} plates + ${fmtW(q.base)} base)</span>` : ''}`; return psLong(e) || fmtTotal(dispW(e)); }; // headline
 const hsVal = () => round1(conv(HS_LB, 'lb', unit()));
 const wMode = p => { const m = machineForDraft(p); const d = P[p] || {}; return { ps: perSideOf(m), arms: armsOf(m), ds: dstackOf(m), hs: hasChips(m) && d.hs ? hsVal() : 0, cable: hasChips(m) }; };
 const chipOn = (p, xv) => { const w = wMode(p), v = P[p].add; return Math.abs((w.ps ? 2 * xv : xv + w.hs) - v) < 1e-6; };
@@ -597,12 +597,12 @@ function weightPicker(p, compact = false) {
   <div class="total" id="wt-${p}" data-testid="weight-total">${weightTotal(p)}</div></div>`;
 }
 // Big number = working/added weight (what you change every set)
-const weightBig = p => wMode(p).ds ? `${fmtW(round1(P[p].add + (P[p].noBase ? 0 : (P[p].base || 0))))}<small>${unit()} / arm</small>` : wMode(p).arms ? (P[p].noBase ? `${fmtW(round1(P[p].add / 2))}<small>${unit()} plates / arm</small>` : `${fmtW(round1(P[p].add / 2 + (P[p].base || 0)))}<small>${unit()} / arm</small>`) : wMode(p).ps ? `${fmtW(round1(P[p].add / 2))}<small>${unit()} / side</small>` : `${fmtW(P[p].add)}<small>${unit()}</small>`;
+const weightBig = p => wMode(p).ds ? `${fmtW(round1(P[p].add))}<small>${unit()} / arm</small>` : wMode(p).arms ? `${fmtW(round1(P[p].add / 2))}<small>${unit()} plates / arm</small>` : wMode(p).ps ? `${fmtW(round1(P[p].add / 2))}<small>${unit()} / side</small>` : `${fmtW(P[p].add)}<small>${unit()}</small>`;
 const weightTotal = p => { const d = P[p]; const wm = wMode(p);
   const work = wm.ps ? `2 × ${fmtW(round1(d.add / 2))} per side` : wm.hs ? `${fmtW(round1(d.add - wm.hs))} stack + ${fmtW(wm.hs)} horseshoe` : `${fmtW(d.add)} working`;
   if (wm.ds) return `<span data-testid="weight-split"><b>${fmtW(round1(d.add + (d.noBase ? 0 : (d.base || 0))))} ${unit()} / arm</b>${!d.noBase && d.base ? ` (${fmtW(d.add)} stack + ${fmtW(d.base)} base)` : ''}</span> <span class="bquiet">(two stacks, same weight each arm)</span>`;
-  if (wm.arms) return d.noBase ? `<b>${fmtW(round1(d.add / 2))} plates / arm</b> · <span data-testid="base-not-set">base not set</span> <span class="bquiet">(each arm moves its own weight)</span>`
-    : `<span data-testid="weight-split"><b>${fmtW(round1(d.add / 2))} plates + ${fmtW(d.base || 0)} base</b> per arm</span> <span class="bquiet">(each arm moves its own weight)</span>`;
+  if (wm.arms) return d.noBase ? `<b>${fmtW(round1(d.add / 2))} ${unit()} plates / arm</b> · <span data-testid="base-not-set">base not set</span> <span class="bquiet">(each arm moves its own weight)</span>`
+    : `Total <b>${fmtW(round1(d.add / 2 + (d.base || 0)))} ${unit()} / arm</b> <span class="bquiet" data-testid="weight-split">(${fmtW(round1(d.add / 2))} plates + ${fmtW(d.base || 0)} base per arm)</span>`;
   if (d.noBase) return `Working <b>${fmtW(d.add)} ${unit()}</b>${wm.ps || wm.hs ? ` <span class="bquiet">(${work})</span>` : ''} · <span data-testid="base-not-set">base not set — total filled in once set</span>`;
   const tot = round1(d.add + (d.base || 0));
   if (wm.ps) return `<b>${fmtW(round1(d.add / 2))}/side</b> · Total <b>${fmtW(tot)} ${unit()}</b> <span class="bquiet" data-testid="weight-split">(${work} + ${fmtW(d.base || 0)} base)</span>`;
@@ -1584,7 +1584,7 @@ function initDraft(ses, ex, mId) {
     const today = setsOf(ses, ex.id, mId); const l = lastFor(ex.id, mId, ses.id); const tg = repeatTarget(ses, ex.id);
     const ref = today[today.length - 1] || (tg && tg.mId === mId && tg.ents[tg.ents.length - 1]) || lastEnt(l);
     {
-      const raw = ref ? Math.max(0, (ref.base === null ? round1(conv(ref.add || 0, ref.u || 'lb', unit())) : dispW(ref)) - d.base) : 0;
+      const raw = ref ? Math.max(0, ref.add != null ? round1(conv(ref.add || 0, ref.u || 'lb', unit())) : dispW(ref) - d.base) : 0;
       const mchips = m && m.weightChips && m.weightChips.length ? m.weightChips.map(c => round1(conv(+c, m.chipBu || 'lb', unit()))) : null;
       d.add = mchips && mchips.some(c => Math.abs(c - raw) < 0.06) ? snapToChips(raw, mchips) : keepFine(raw);
       if (hsGuess(m, raw)) { d.hs = true; d.add = round1(raw); }
@@ -1771,8 +1771,7 @@ function setbarHTML() {
   if (!d || !d.mId) return `<div class="setbar setbar-sm"><div class="inner">${th}</div></div>`;
   if (ex.kind === 'cardio') return `<div class="setbar setbar-sm"><div class="inner">${th}<button class="setbtn all" data-a="log-cardio" data-testid="log-cardio">Log cardio</button></div></div>`;
   const sets = setsOf(ses, ex.id, d.mId); const by = n => sets.find(s => s.set === n);
-  const psm = perSideOf(machById(ex, d.mId)), arm = armsOf(machById(ex, d.mId)), dsm = dstackOf(machById(ex, d.mId));
-  const cur = `<span class="cur">${dsm ? `${fmtW(round1(d.add + (d.noBase ? 0 : (d.base || 0))))}/arm×${d.reps}` : arm ? `${armTxt(round1(d.add / 2), d.noBase ? null : (d.base || 0), false)}<br>×${d.reps}` : psm ? `${fmtW(round1(d.add / 2))}/side<br>${d.noBase ? '?' : fmtW(round1(d.add + d.base))}` : fmtW(round1(d.add + d.base))}×${d.reps}</span>`;
+  const cur = `<span class="cur">${draftCurHTML(ex, d)}</span>`;
   const btn = n => { const e = by(n); return e ? `<button class="setbtn logged" data-a="edit-entry" data-sid="${ses.id}" data-id="${e.id}" data-testid="set-${n}">Set ${n} ✓<small>${psParts(e) ? (psParts(e).dstack ? `${psShort(e)}×${e.reps}` : psParts(e).arms ? `${psShort(e)}<br>×${e.reps}` : `${fmtW(psParts(e).side)}/side<br>${psParts(e).tot === null ? '?' : fmtW(psParts(e).tot)}×${e.reps}`) : `${fmtW(dispW(e))}×${e.reps}`}</small></button>`
     : `<button class="setbtn" data-a="log-set" data-n="${n}" data-testid="set-${n}">Set ${n}<small>${cur}</small></button>`; };
   const remaining = [1, 2, 3].filter(n => !by(n)); const nx = nextSetNo(ses, ex.id, d.mId);
@@ -1782,13 +1781,18 @@ function setbarHTML() {
   return `<div class="setbar setbar-sm"><div class="inner">${th}<div class="sets-row">${btn(1)}${btn(2)}${btn(3)}${all}
     <button class="setbtn start sm" data-a="lock-start" data-testid="start-set" aria-label="Timed set">▶</button></div></div></div>`;
 }
-function updateSetbarLabel() { if (!curEx) return; const d = P[draftKey(curEx.sid, curEx.exId)]; if (!d || d.add == null) return; $$('.setbar .cur').forEach(c => c.textContent = `${fmtW(round1(d.add + d.base))}×${d.reps}`); }
+function draftCurHTML(ex, d) {
+  const m = machById(ex, d.mId), psm = perSideOf(m), arm = armsOf(m), dsm = dstackOf(m);
+  return `${dsm ? `${fmtW(round1(d.add + (d.noBase ? 0 : (d.base || 0))))}/arm×${d.reps}` : arm ? `${armTxt(round1(d.add / 2), d.noBase ? null : (d.base || 0), false)}<br>×${d.reps}` : psm ? `${fmtW(round1(d.add / 2))}/side<br>${d.noBase ? '?' : fmtW(round1(d.add + d.base))}×${d.reps}` : `${fmtW(round1(d.add + d.base))}×${d.reps}`}`;
+}
+function updateSetbarLabel() { if (!curEx) return; const ex = exById(curEx.exId), d = P[draftKey(curEx.sid, curEx.exId)]; if (!ex || !d || d.add == null) return; $$('.setbar .cur').forEach(c => c.innerHTML = draftCurHTML(ex, d)); }
 function logSets(nums, extra = {}) {
   const ses = sesById(curEx.sid); const d = P[draftKey(curEx.sid, curEx.exId)];
   const tot = round1(d.add + d.base);
   const added = nums.map((n, i) => Object.assign({ id: uid(), kind: 'set', exId: curEx.exId, mId: d.mId, set: n, w: tot, add: d.add, base: d.noBase ? null : d.base, u: unit(), reps: d.reps, diff: d.diff, tags: d.tags.slice(), note: '', ts: nowTs() }, extra));
   ses.entries.push(...added); d.tags = []; markDirty(added.map(e => e.id)); persist(); render();
-  toast(nums.length > 1 ? `Logged ${nums.length} sets · ${fmtW(tot)}×${d.reps}` : `Set ${nums[0]} logged · ${fmtW(tot)}×${d.reps}`, () => {
+  const wlbl = wChip(added[0]);
+  toast(nums.length > 1 ? `Logged ${nums.length} sets · ${wlbl}×${d.reps}` : `Set ${nums[0]} logged · ${wlbl}×${d.reps}`, () => {
     ses.entries = ses.entries.filter(e => !added.includes(e)); markDeleted(added.map(e => e.id)); persist(); render();
   });
 }
@@ -1898,7 +1902,7 @@ function openEntrySheet(sid, id, keep) {
   const p = 'ed';
   if (e.kind === 'set') {
     const base = round1(conv(e.base || 0, e.u || 'lb', unit()));
-    P[p] = { base, noBase: e.base === null, add: round1(dispW(e) - base), reps: e.reps, mId: e.mId };
+    P[p] = { base, noBase: e.base === null, add: e.add != null ? round1(conv(e.add, e.u || 'lb', unit())) : round1(dispW(e) - base), reps: e.reps, mId: e.mId };
     P[p].hs = hsGuess(machById(exById(e.exId), e.mId), P[p].add);
   } else P[p] = { dur: e.dur, dist: e.dist || 0, level: e.level || 0 };
   Object.assign(P[p], { diff: e.diff || 3, tags: (e.tags || []).slice(), sid, id });
@@ -2276,8 +2280,7 @@ function initME(exId, mId) {
   const startTot = m && m.start ? round1(conv(m.start.w, m.start.u, unit())) : prev && prev.kind === 'set' ? round1(dispW(prev)) : 0;
   P.me = { add: keepFine(startTot - (ME.base || 0)), base: ME.base || 0 };
 }
-/* changing the base keeps the starting TOTAL the same (added weight adjusts) */
-function meSetBase(b) { const tot = P.me.add + (ME.base || 0); ME.base = b; P.me.base = b || 0; P.me.add = keepFine(tot - (b || 0)); render(); }
+function meSetBase(b) { ME.base = b; P.me.base = b || 0; render(); }
 function viewMachineEdit(exId, mId) {
   const ex = exById(exId); if (!ex) return `<div class="empty">Exercise not found.</div>`;
   if (!ME || ME.exId !== exId || ME.key !== mId) initME(exId, mId);
@@ -2347,7 +2350,7 @@ function viewExHistory(sid, exId) {
 }
 /* ---------------- View: Settings ---------------- */
 /* ---------------- View: Activity log (2.5.7) ---------------- */
-const J_RESTORABLE = new Set(['set-delete', 'session-delete', 'move-date', 'move-machine', 'machine-remove', 'machine-merge', 'brand-split']);
+const J_RESTORABLE = new Set(['set-delete', 'session-delete', 'move-date', 'move-machine', 'machine-remove', 'machine-merge', 'brand-split', 'plate-fix']);
 let jShow = 150;
 function viewJournal(day) {
   const dayOf = e => ymd(new Date(e.ts));
@@ -2384,7 +2387,7 @@ function jRestore(id) {
   e.changes.filter(c => c.k.startsWith('machine:') && c.type === 'del' && c.before).forEach(c => {
     const b = JSON.parse(JSON.stringify(c.before)); const ex = exById(b.exId); delete b.exId;
     if (ex && !machById(ex, b.id)) { ex.machines.push(b); machs.push(b.name); } });
-  const isPrimary = c => c.type === 'del' || (c.type === 'mod' && (c.before.sid !== c.after.sid || c.before.mId !== c.after.mId || c.before.exId !== c.after.exId || c.before.date !== c.after.date));
+  const isPrimary = c => c.type === 'del' || (c.type === 'mod' && (e.action === 'plate-fix' || c.before.sid !== c.after.sid || c.before.mId !== c.after.mId || c.before.exId !== c.after.exId || c.before.date !== c.after.date));
   // sessions that this entry deleted come back first (wrap-up, notes, exercise list as they were)
   e.changes.filter(c => c.k.startsWith('session:') && c.before && !sesById(c.before.id) && c.type === 'del').forEach(c => { const x = JSON.parse(JSON.stringify(c.before)); x.entries = []; S.sessions.push(x); });
   e.changes.filter(c => c.k.startsWith('entry:') && c.before && isPrimary(c)).forEach(c => {
@@ -3020,6 +3023,65 @@ function gymFix263() {
   persist();
   return done.length;
 }
+/* 2.6.4 one-time (flag S.settings.plateFix264): repair logged sets on plate-split / plate-loaded machines where
+   (a) in 2.6.1–2.6.3 the big working number included the per-arm base, so setting 45 or 50 lb plates on Upper-Back Row (base 12)
+       stored 33 or 38 plates per arm (add 66 / 76 instead of 90 / 100), and
+   (b) pre-2.6.0 sets (Oct 5–16) stored single-arm plate weight in add before per-side doubling (add = 2 × plates per arm).
+   Reversible via Activity log "Restore this" (action 'plate-fix'). */
+const PLATE_FIX_264 = {
+  'mvi5p94hq7exs': { add: 90, base: 12, w: 102 },
+  'mvi5p9iufmbyf': { add: 90, base: 12, w: 102 },
+  'mvi5pacvvyrc0': { add: 90, base: 12, w: 102 },
+  'mvmbdc1t667sc': { add: 90, base: 12, w: 102 },
+  'mvmbdd0i6bxk4': { add: 90, base: 12, w: 102 },
+  'mvmbhuhandi1s': { add: 100, base: 12, w: 112 },
+  'muy5psvvujyn1': { add: 70, base: 12, w: 82 },
+  'muy5pvpjb8lsu': { add: 90, base: 12, w: 102 },
+  'muy5pw7khi1xs': { add: 90, base: 12, w: 102 },
+  'muxllm5ux0rz9': { add: 50, base: 4, w: 54 },
+  'muxlmfb75kqjm': { add: 50, base: 4, w: 54 },
+  'muxlt3ox8geuj': { add: 50, base: 4, w: 54 },
+  'mv10b8qu491cq': { add: 50, base: 4, w: 54 },
+  'mv10bddj676ug': { add: 50, base: 4, w: 54 },
+  'mv10bo5jz7hui': { add: 55, base: 4, w: 59 },
+  'mvc7wczogylg4': { add: 50, base: 4, w: 54 },
+  'mvc7wdfuevd9p': { add: 50, base: 4, w: 54 },
+  'mvc7we14aapw1': { add: 50, base: 4, w: 54 },
+  'mv5km5h6hqesj': { add: 20, base: 8, w: 28 },
+  'mv5kueyjigxoy': { add: 20, base: 8, w: 28 },
+  'mv5kufawcn5za': { add: 20, base: 8, w: 28 },
+  'mv5m73jjqfcdd': { add: 20, base: 10, w: 30 },
+  'mv5m8dpl9f30b': { add: 20, base: 10, w: 30 },
+  'muxju9b13p6ji': { add: 10, base: 15, w: 25 },
+  'muxk0nnxuiytl': { add: 10, base: 15, w: 25 },
+  'muxk400vd6deg': { add: 10, base: 15, w: 25 },
+  'muziho81u1tkd': { add: 10, base: 15, w: 25 },
+};
+function repairPlateHistory264() {
+  if (!S.migrated) S.migrated = {};
+  if (S.migrated.plateFix264 || S.settings.plateFix264) return 0;
+  const ids = [];
+  S.sessions.forEach(s => (s.entries || []).forEach(e => {
+    if (e.kind !== 'set') return;
+    let fix = PLATE_FIX_264[e.id];
+    if (!fix && e.mId === 'm-iso-lateral-upper-back-row' && e.base === 12) {
+      if (e.add === 66) fix = { add: 90, base: 12, w: 102 };
+      else if (e.add === 76) fix = { add: 100, base: 12, w: 112 };
+    }
+    if (!fix) return;
+    if (e.add !== fix.add || e.base !== fix.base || e.w !== fix.w) {
+      e.add = fix.add; e.base = fix.base; e.w = fix.w; ids.push(e.id);
+    }
+  }));
+  S.migrated.plateFix264 = true; S.settings.plateFix264 = true;
+  if (ids.length) {
+    Object.keys(P).forEach(k => { if (k.startsWith('ex-')) delete P[k]; });
+    markDirty(ids);
+    jCtx = { action: 'plate-fix', label: `Plate weight history repair (Oct 24): fixed ${ids.length} set${ids.length === 1 ? '' : 's'} on plate-loaded machines` };
+  }
+  persist();
+  return ids.length;
+}
 function brandSplit260() {
   if (!S.migrated) S.migrated = {};
   if (S.migrated.brand260) return 0;
@@ -3066,6 +3128,7 @@ function undoBrandSplit(entry) {
   // Auto-apply published catalog before first paint when possible (first-run setup + updates).
   await checkCatalogUpdate();
   try { gymFix263(); } catch (e) { console.warn('gym fix failed', e); }
+  try { repairPlateHistory264(); } catch (e) { console.warn('plate history repair failed', e); }
   persist();
   render(); registerSW();
   // one-time notices, one after another; each is cleared once it has been on screen for 3 s

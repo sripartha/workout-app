@@ -391,3 +391,4 @@ body.focus #app.has-bar{padding-bottom:calc(var(--sab) + 112px)} /* = slim setba
 .mtype span{font-size:11px;color:var(--mut);line-height:1.25}
 .mtype.on{border-color:var(--acc);background:rgba(255,140,40,.12)}
 .mtype.on b{color:var(--acc2)}
+.rsess{width:100%}.last-prom b{font-size:16px}.last-prom b .wsplit{font-size:11px;font-weight:500;color:var(--mut)}
