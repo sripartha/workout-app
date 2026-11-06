@@ -1,7 +1,7 @@
 /* Lift Log — tap-only workout logger PWA. Plain JS, no build step, no dependencies. */
 'use strict';
 (function () {
-const APP_VERSION = '2.6.4';
+const APP_VERSION = '2.6.5';
 const LB_PER_KG = 2.20462;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -1744,7 +1744,7 @@ function viewExercise(sid, exId) {
     ${ses.date < todayStr() ? `<div class="ex-title-row"><h1 class="ex-title grow">${esc(ex.name)}</h1><div class="pastchip" data-testid="past-banner"><span>📅 <b>${esc(fmtD(ses.date))}</b></span><button class="chip sm" data-a="date-today" data-testid="back-today">Today ↩</button></div></div>` : `<h1 class="ex-title">${esc(ex.name)}</h1>`}
     ${m ? `<div class="row wrap"><span class="selm" data-testid="sel-machine">${esc(mLabel(m))}</span>${m.photoId ? `<button class="photo-link" data-a="photo" data-id="${m.photoId}" data-testid="photo-link">📷</button>` : ''}</div>
       ${machFine(m) ? `<div class="fine" data-testid="loc">${machFine(m)}</div>` : ''}
-      ${m.cues ? `<button class="fine cue1" data-a="show-cues" data-m="${m.id}" data-testid="m-cues">🧠 ${esc(m.cues)}</button>` : ''}` : ''}
+      <button class="fine cue1${m.cues ? '' : ' cue-empty'}" data-a="show-cues" data-m="${m.id}" data-testid="m-cues">${m.cues ? '🧠 ' + esc(m.cues) : '🧠 Add cue'}</button>` : ''}
     ${m ? '' : cuesHTML(ex, m)}
     ${m && m.caution ? `<div class="fine mcaut-line" data-testid="m-caution">⚠️ ${esc(m.caution)}</div>` : ''}
     ${m ? '' : headsUp(ses, ex)}${m ? adviceFor(ex, mId) : ''}
@@ -2585,9 +2585,16 @@ document.addEventListener('click', async ev => {
       if (!await confirmSheet('Restore this?', `Puts back what this changed, as it was: “${e.label}”. Nothing else is removed, and the restore is logged too.`, 'Restore', 'pri')) return;
       return jRestore(ds.id); }
     case 'j-more': jShow += 150; return render();
-    case 'show-cues': { const ex = curEx && exById(curEx.exId); const m = ex && machById(ex, ds.m); if (!m) return; // 2.5.9: one-line machine cue → full text
-      const c = [ex.cues, m.cues].filter(Boolean).join(' · ');
-      return openSheet(`<div data-testid="cues-sheet"><h2>${esc(mLabel(m))}</h2><div class="sub" style="margin-bottom:8px">${machFine(m)}</div><div class="cues-full">🧠 ${esc(c)}</div><div style="height:12px"></div><button class="btn ghost" data-a="sheet-cancel" data-testid="cues-close">Close</button></div>`); }
+    case 'show-cues': { const ex = curEx && exById(curEx.exId); const m = ex && machById(ex, ds.m); if (!m) return; // 2.6.5: edit machine cues on the lifting screen
+      return openSheet(`<div data-testid="cues-sheet"><h2>${esc(mLabel(m))}</h2><div class="sub" style="margin-bottom:8px">${machFine(m) || 'Coaching cues for this machine'}</div>
+        <textarea class="field" id="cue-edit" rows="4" placeholder="e.g. seat 4, handles mid-chest" data-testid="cue-edit">${esc(m.cues || '')}</textarea>
+        <div style="height:12px"></div>
+        <button class="btn pri" data-a="cue-save" data-m="${m.id}" data-testid="cue-save">Save</button>
+        <button class="btn ghost" data-a="sheet-cancel" data-testid="cues-close">Cancel</button></div>`); }
+    case 'cue-save': { const ex = curEx && exById(curEx.exId); const m = ex && machById(ex, ds.m); if (!m) return;
+      const v = (($('#cue-edit') && $('#cue-edit').value) || '').trim();
+      if ((m.cues || '') === v) { closeSheet(); return; }
+      m.cues = v; persist(); closeSheet(); toast(v ? 'Cue saved' : 'Cue cleared'); return render(); }
     case 'finish': { const s = sesById(ds.sid); syncNow(); if (!s || (!s.entries.length && !s.wrap)) { toast('Saved. Nice work!'); return go('#/today'); }
       W = null; wrapReturn = '#/today'; return go(`#/w/${s.id}`); }
     case 'open-wrap': W = null; wrapReturn = `#/h/${ds.sid}`; return go(`#/w/${ds.sid}`);

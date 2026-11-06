@@ -392,3 +392,5 @@ body.focus #app.has-bar{padding-bottom:calc(var(--sab) + 112px)} /* = slim setba
 .mtype.on{border-color:var(--acc);background:rgba(255,140,40,.12)}
 .mtype.on b{color:var(--acc2)}
 .rsess{width:100%}.last-prom b{font-size:16px}.last-prom b .wsplit{font-size:11px;font-weight:500;color:var(--mut)}
+/* 2.6.5: empty machine cue is still visible/tappable on the lifting screen */
+.cue1.cue-empty{opacity:.55;font-style:italic}
