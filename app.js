@@ -1,7 +1,7 @@
 /* Lift Log — tap-only workout logger PWA. Plain JS, no build step, no dependencies. */
 'use strict';
 (function () {
-const APP_VERSION = '2.6.5';
+const APP_VERSION = '2.6.6';
 const LB_PER_KG = 2.20462;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));

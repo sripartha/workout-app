@@ -1,9 +1,9 @@
 {
  "app": "liftlog",
  "schema": 2,
- "version": "2.6.3",
- "catalogVersion": 1792413618419,
- "exportedAt": "2026-10-19T12:40:19.868020Z",
+ "version": "2.6.6",
+ "catalogVersion": 1795618772572,
+ "exportedAt": "2026-11-25T14:59:32.572774Z",
  "state": {
   "v": 2,
   "created": 1792413618419,
@@ -490,6 +490,18 @@
       "cues": "Independent levers, elbows tucked",
       "caution": "",
       "mtype": "psplit"
+     },
+     {
+      "id": "m-lever-row",
+      "brand": "",
+      "name": "Lever Row",
+      "base": 35,
+      "bu": "lb",
+      "gym": "Lakeway",
+      "loc": "10-2",
+      "cues": "Upper chest up, pull straight back, squeeze the back.",
+      "caution": "",
+      "mtype": "pshared"
      }
     ],
     "pinned": "",
@@ -2524,6 +2536,29 @@
    ],
    "base": [
     0
+   ]
+  },
+  "m-lever-row": {
+   "name": [
+    "Lever Row"
+   ],
+   "brand": [
+    ""
+   ],
+   "gym": [
+    "Lakeway"
+   ],
+   "loc": [
+    "10-2"
+   ],
+   "cues": [
+    "Upper chest up, pull straight back, squeeze the back."
+   ],
+   "caution": [
+    ""
+   ],
+   "base": [
+    35
    ]
   }
  }
